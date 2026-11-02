@@ -481,6 +481,9 @@ body.auth-locked header.top, body.auth-locked main, body.auth-locked #banner{dis
 .invite-code{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin-bottom:10px}
 .invite-code b{font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;font-size:1.6rem;letter-spacing:.12em;color:var(--head);background:var(--leaf-pale);border:1px solid var(--leaf);border-radius:8px;padding:3px 12px}
 .invite-code small{color:var(--soft);font-size:.82rem}
+body.public-view nav.tabs button[data-view="perfil"], body.public-view nav.tabs button[data-view="revisar"], body.public-view nav.tabs button[data-view="membros"]{display:none}
+body.read-only #focusPanel .actions button:nth-child(-n+4), body.read-only .focus-photo .btn, body.read-only .origin-add, body.read-only .fg-kids .lbl .btn,
+body.read-only .fg-person.vazio, body.read-only button.empty-slot, body.read-only .full-sec-head .btn{display:none}
 .gbtn{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;padding:12px 16px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#1f1f1f;font-weight:600;font-size:1rem;box-shadow:0 1px 2px rgba(0,0,0,.06);transition:box-shadow .15s,border-color .15s}
 .gbtn:hover{border-color:#9aa3ad;box-shadow:0 4px 14px -6px rgba(0,0,0,.25)}
 .user-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);border-radius:24px;padding:3px 4px 3px 4px;background:var(--card)}
@@ -833,7 +836,7 @@ function save(){
     localStorage.setItem(STORE_KEY, JSON.stringify({versao:3, foco:focusId, familiaPrincipal:famHome, familiaInicio:famStart, familiaConjuge:famSpouse, familiaAbertas:famOpen, salvoEm:new Date().toISOString(), pessoas:P}));
   }catch(e){ ok = false; }
   okG = saveGalleryLocal();
-  if(shared.on){ queueSync(); updateStatus(); return true; }
+  if(shared.on){ queueSync(); updateStatus(); if(typeof schedulePublicSync === 'function') schedulePublicSync(); return true; }
   el.textContent = !ok ? 'Espaço do navegador cheio — use Arquivo › Exportar' : !okG ? 'Galeria sem espaço neste navegador' : 'Salvo neste navegador';
   return ok && okG;
 }
@@ -2300,6 +2303,7 @@ function applyServer(force){
   shared.synced.galeria = {}; Object.keys(G).forEach(function(id){ shared.synced.galeria[id] = stableSig(galBody(G[id])); });
   dupCache = null; resetBaseline();
   if(shared.ready) renderAll(true);
+  if(typeof schedulePublicSync === 'function') schedulePublicSync();
 }
 function attachDb(db, readOnly){
   showLoading(true);
@@ -2348,6 +2352,7 @@ function checkEmpty(){
 }
 function applyReadOnlyUI(){
   document.body.classList.toggle('read-only', shared.readOnly);
+  if(typeof pub !== 'undefined' && pub.view){ publicBanner(); return; }
   if(shared.readOnly) setBanner('Seu acesso é de leitura. Contatos e datas completas de pessoas vivas ficam ocultos. Para cadastrar e editar, peça acesso de editor a um administrador.', 'info');
 }
 function showLoading(on){ $('loadBox').hidden = !on; document.querySelector('main').classList.toggle('is-loading', on); }
@@ -3096,6 +3101,7 @@ function emailForm(info){
     pw.placeholder = m === 'criar' ? 'crie uma senha (mínimo 6 caracteres)' : 'senha';
   }
   function fail(e){ err.hidden = false; err.textContent = authErrorText(e); mainBtn.disabled = false; }
+  try{ if(sessionStorage.getItem('abrirCadastro')){ sessionStorage.removeItem('abrirCadastro'); setTimeout(function(){ setMode('criar'); }, 0); } }catch(e){}
   toggle.addEventListener('click', function(){ err.hidden = true; setMode(mode === 'criar' ? 'entrar' : 'criar'); });
   forgot.addEventListener('click', function(){
     var e = em.value.trim();
@@ -3152,6 +3158,7 @@ function startFirebase(){
     fb.fs.enablePersistence({synchronizeTabs:true}).catch(function(){});
   }catch(e){ renderAuth('login', 'Configuração do Firebase inválida: ' + (e.message || e)); return; }
   fb.auth.getRedirectResult().catch(function(e){ var t = authErrorText(e); if(t) renderAuth('login', t); });
+  if(qs('publico')){ startPublic(qs('publico')); return; }
   fb.auth.onAuthStateChanged(function(u){
     fb.unsub.forEach(function(x){ try{ x(); }catch(e){} }); fb.unsub = [];
     if(!u){ renderAuth('login'); return; }
@@ -3215,8 +3222,13 @@ function afterLogin(u){
   renderAuth('loading', 'Olá, ' + (u.displayName || fb.email).split(' ')[0] + '! Buscando suas árvores…');
   var wanted = qs('arvore'), entered = false;
   function decide(){
-    if(entered || !tree.gotMine || !tree.gotReqs) return;
+    if(entered || tree.creating || !tree.gotMine || !tree.gotReqs) return;
     var mineIds = tree.mine.map(function(a){ return a.arvore; });
+    var dl = null; try{ dl = JSON.parse(sessionStorage.getItem('depoisLogin') || 'null'); sessionStorage.removeItem('depoisLogin'); }catch(e){}
+    if(dl && dl.acao === 'join' && dl.arvore){
+      if(mineIds.indexOf(dl.arvore) >= 0){ entered = true; openTree(dl.arvore); return; }
+      renderJoin(dl.arvore, dl.nome); return;
+    }
     var conv = qs('convite');
     if(conv){ entered = true; try{ history.replaceState(null, '', location.pathname); }catch(e){} joinByCode(conv); return; }
     if(wanted){
@@ -3304,7 +3316,7 @@ function renderCreate(){
     var n = nome.value.trim();
     if(!n){ err.hidden = false; err.textContent = 'Dê um nome para a árvore.'; nome.focus(); return; }
     var start = (opts.querySelector('input:checked') || {}).value || 'eu';
-    go.disabled = true; go.textContent = 'Criando…';
+    go.disabled = true; go.textContent = 'Criando…'; tree.creating = true;
     var ref = fb.fs.collection('arvores').doc();
     ref.set({nome:n, dono:fb.email, criadoEm:firebase.firestore.FieldValue.serverTimestamp()}).then(function(){
       return fb.fs.collection('acessos').doc(ref.id + '__' + fb.email).set({
@@ -3313,7 +3325,7 @@ function renderCreate(){
     }).then(function(){
       try{ sessionStorage.setItem('arvore-inicio-' + ref.id, start); }catch(e){}
       goTree(ref.id);
-    }, function(e){ go.disabled = false; go.textContent = 'Criar árvore'; err.hidden = false; err.textContent = 'Não foi possível criar a árvore (' + (e.code || 'erro') + '). Confira se as regras novas do Firestore foram publicadas.'; });
+    }, function(e){ tree.creating = false; go.disabled = false; go.textContent = 'Criar árvore'; err.hidden = false; err.textContent = 'Não foi possível criar a árvore (' + (e.code || 'erro') + '). Confira se as regras novas do Firestore foram publicadas.'; });
   });
   authCard([
     whoBox(),
@@ -3360,7 +3372,9 @@ function renderJoin(id, nomeDado){
           .then(function(){ toast('Pedido enviado'); }, function(e){ toast('Não foi possível enviar o pedido (' + (e.code || 'erro') + ').'); });
       }}),
       h('button', {class:'btn', type:'button', text:'Ver minhas árvores', onclick:goPicker})
-    ])
+    ]),
+    h('div', {class:'auth-or'}, [h('span', {text:'ou'})]),
+    h('button', {class:'btn wide', type:'button', text:'Criar minha própria árvore', onclick:renderCreate})
   ]));
 }
 
@@ -3385,6 +3399,12 @@ function openTree(id){
     if(!d.exists) return; var dd = d.data() || {}, n = dd.nome;
     var conv = dd.convite || '';
     if(conv !== tree.convite){ tree.convite = conv; if(conv){ fb.fs.collection('convites').doc(conv).get().then(function(c){ tree.convitePapel = c.exists ? c.data().papel : ''; if(current === 'membros') renderMembers(); }, function(){}); } else { tree.convitePapel = ''; if(current === 'membros') renderMembers(); } }
+    var pc = dd.publico || '';
+    if(pc !== pub.code){
+      pub.code = pc; pub.sigs = null;
+      if(pc) fb.fs.collection('publicos').doc(pc).get().then(function(c){ var x = c.exists ? c.data() : {}; pub.ativo = !!x.ativo; pub.fotos = !!x.fotos; if(current === 'membros') renderMembers(); schedulePublicSync(); }, function(){});
+      else { pub.ativo = false; if(current === 'membros') renderMembers(); }
+    }
     if(n && n !== tree.nome){ tree.nome = n; document.title = n; if(h1) h1.textContent = n; }
   }, function(){}));
   attachDb(scopedDb(id), fb.role === 'leitor');
@@ -3483,6 +3503,7 @@ function renderMembers(){
     }}), (function(){ var a = h('a', {class:'ct wa', href:'https://wa.me/?text=' + encodeURIComponent('Montei a árvore genealógica da família! Entre por este link e peça acesso: ' + link), target:'_blank', rel:'noopener noreferrer'}); a.innerHTML = ICONS.wa; a.appendChild(h('span', {text:'Enviar no WhatsApp'})); return a; })()])
   ]));
 
+  box.appendChild(publicPanel());
   var reqs = h('section', {class:'panel', style:'margin-top:16px'}, [h('h3', {text:'Pedidos de acesso (' + membersState.pedidos.length + ')'})]);
   if(!membersState.pedidos.length) reqs.appendChild(h('div', {class:'muted', text:'Nenhum pedido aguardando.'}));
   membersState.pedidos.forEach(function(r){
@@ -3521,6 +3542,145 @@ function renderMembers(){
       grant(em, addRole.value, {nome:''}).then(function(){ addIn.value = ''; toast(em + ' liberado(a)'); }, function(e){ toast('Não foi possível liberar (' + (e.code || 'erro') + ').'); });
     }})]));
   box.appendChild(mem);
+}
+
+/* ================= link público ================= */
+// publicos/{codigo}            {arvore, nomeArvore, ativo, fotos, atualizadoEm}
+// publicos/{codigo}/pessoas/*  cópia SEM dados privados, mantida pelo administrador
+var pub = {code:'', fotos:false, ativo:false, sigs:null, timer:null, busy:false, again:false, view:''};
+function publicLink(code){ return location.origin + location.pathname + '?publico=' + code; }
+function publicBody(p){
+  var vivo = isLiving(p);
+  var b = {nome:p.nome || '', ni:!!p.ni, sexo:p.sexo || '', pai:p.pai || null, mae:p.mae || null, conj:(p.conj || []).slice(), ord:p.ord || 0,
+    apelido:p.apelido || '', falec:p.falec || '', nasc:p.nasc ? (vivo ? yearOnly(p.nasc) : p.nasc) : ''};
+  if(!vivo){ b.local = p.local || ''; b.profissao = p.profissao || ''; b.notas = p.notas || ''; b.fontes = p.fontes || ''; }
+  b.foto = (p.foto && (!vivo || pub.fotos)) ? p.foto : '';
+  return b;
+}
+function schedulePublicSync(){
+  if(!fb.isAdmin || !pub.code || !pub.ativo || !shared.ready || pub.view) return;
+  clearTimeout(pub.timer); pub.timer = setTimeout(function(){ publicSync(false); }, 4000);
+}
+function publicSync(force){
+  if(!pub.code || !fb.isAdmin) return Promise.resolve();
+  if(pub.busy){ pub.again = true; return Promise.resolve(); }
+  pub.busy = true;
+  var meta = fb.fs.collection('publicos').doc(pub.code), col = meta.collection('pessoas');
+  var load = (pub.sigs && !force) ? Promise.resolve() : col.get().then(function(s){ pub.sigs = {}; s.docs.forEach(function(d){ pub.sigs[d.id] = stableSig(d.data()); }); });
+  return load.then(function(){
+    var ops = [], want = {};
+    Object.keys(P).forEach(function(id){ var b = publicBody(P[id]), j = stableSig(b); want[id] = 1; if(pub.sigs[id] !== j) ops.push({id:id, b:b, j:j}); });
+    Object.keys(pub.sigs).forEach(function(id){ if(!want[id]) ops.push({id:id, del:true}); });
+    if(!ops.length) return;
+    var chunks = []; for(var i = 0; i < ops.length; i += 400) chunks.push(ops.slice(i, i + 400));
+    return chunks.reduce(function(pr, ch){
+      return pr.then(function(){
+        var bt = fb.fs.batch();
+        ch.forEach(function(o){ if(o.del) bt.delete(col.doc(o.id)); else bt.set(col.doc(o.id), o.b); });
+        return bt.commit().then(function(){ ch.forEach(function(o){ if(o.del) delete pub.sigs[o.id]; else pub.sigs[o.id] = o.j; }); });
+      });
+    }, Promise.resolve()).then(function(){ return meta.update({nomeArvore:tree.nome, atualizadoEm:firebase.firestore.FieldValue.serverTimestamp()}); });
+  }).then(function(){ pub.busy = false; if(pub.again){ pub.again = false; schedulePublicSync(); } },
+          function(e){ pub.busy = false; pub.sigs = null; console.warn('publico', e); });
+}
+function setPublic(fotos){
+  var code = (newCode() + newCode()).slice(0, 8), old = pub.code;
+  var bt = fb.fs.batch();
+  bt.set(fb.fs.collection('publicos').doc(code), {arvore:tree.id, nomeArvore:tree.nome, ativo:true, fotos:!!fotos, criadoPor:fb.email, atualizadoEm:firebase.firestore.FieldValue.serverTimestamp()});
+  bt.update(fb.fs.collection('arvores').doc(tree.id), {publico:code});
+  return bt.commit().then(function(){
+    var prevOld = old;
+    pub.code = code; pub.fotos = !!fotos; pub.ativo = true; pub.sigs = {};
+    toast('Link público criado. Publicando a árvore…');
+    return publicSync(false).then(function(){ toast('Página pública pronta'); renderMembers(); if(prevOld) wipePublic(prevOld); });
+  }, function(e){ toast('Não foi possível criar o link (' + (e.code || 'erro') + '). Confira se as regras novas foram publicadas.'); });
+}
+function wipePublic(code){
+  var meta = fb.fs.collection('publicos').doc(code), col = meta.collection('pessoas');
+  return meta.update({ativo:false}).catch(function(){}).then(function(){ return col.get(); }).then(function(s){
+    var ids = s.docs.map(function(d){ return d.id; }), chunks = [];
+    for(var i = 0; i < ids.length; i += 400) chunks.push(ids.slice(i, i + 400));
+    return chunks.reduce(function(pr, ch){ return pr.then(function(){ var bt = fb.fs.batch(); ch.forEach(function(id){ bt.delete(col.doc(id)); }); return bt.commit(); }); }, Promise.resolve());
+  }).then(function(){ return meta.delete(); }).catch(function(e){ console.warn('limpar publico', e); });
+}
+function stopPublic(){
+  var code = pub.code; if(!code) return;
+  fb.fs.collection('arvores').doc(tree.id).update({publico:''}).then(function(){
+    pub.code = ''; pub.ativo = false; pub.sigs = null; renderMembers();
+    toast('Link público desativado'); return wipePublic(code);
+  }, function(e){ toast('Não foi possível desativar (' + (e.code || 'erro') + ').'); });
+}
+function publicPanel(){
+  var box = h('section', {class:'panel', style:'margin-top:16px'}, [h('h3', {text:'Página pública'})]);
+  var cb = h('input', {type:'checkbox', id:'pubFotos'}); cb.checked = pub.fotos;
+  var fotosLbl = h('label', {class:'check', for:'pubFotos'}, [cb, 'Mostrar fotos de pessoas vivas']);
+  box.appendChild(h('p', {class:'muted', style:'margin:0 0 10px', text:'Qualquer pessoa com o link vê a árvore, sem precisar de login. A página pública nunca mostra telefones, e-mails, redes sociais, endereço, profissão, observações nem datas completas de pessoas vivas (só o ano). Quem quiser pode pedir para participar ou criar a própria conta.'}));
+  if(pub.code && pub.ativo){
+    var link = publicLink(pub.code), inp = h('input', {type:'text', id:'pubLink', value:link, readonly:true, 'aria-label':'Link público'});
+    var msg = 'Veja a árvore genealógica "' + tree.nome + '": ' + link;
+    box.appendChild(h('div', {class:'member-add', style:'margin-top:0;padding-top:0;border-top:0'}, [inp,
+      h('button', {class:'btn sm primary', type:'button', text:'Copiar link', onclick:function(){ try{ navigator.clipboard.writeText(link).then(function(){ toast('Link copiado'); }, function(){ inp.select(); }); }catch(e){ inp.select(); } }}),
+      (function(){ var a = h('a', {class:'ct wa', href:'https://wa.me/?text=' + encodeURIComponent(msg), target:'_blank', rel:'noopener noreferrer'}); a.innerHTML = ICONS.wa; a.appendChild(h('span', {text:'Enviar no WhatsApp'})); return a; })(),
+      h('a', {class:'btn sm', href:link, target:'_blank', rel:'noopener', text:'Ver como visitante'})
+    ]));
+    cb.addEventListener('change', function(){
+      fb.fs.collection('publicos').doc(pub.code).update({fotos:cb.checked}).then(function(){ pub.fotos = cb.checked; pub.sigs = null; return publicSync(true); }).then(function(){ toast('Página pública atualizada'); }, function(e){ toast('Erro (' + (e.code || 'erro') + ')'); });
+    });
+    box.appendChild(h('div', {class:'actions'}, [fotosLbl,
+      h('button', {class:'btn sm', type:'button', text:'Atualizar agora', onclick:function(){ publicSync(true).then(function(){ toast('Página pública atualizada'); }); }}),
+      h('button', {class:'btn sm', type:'button', text:'Gerar link novo', onclick:function(){ setPublic(cb.checked); }}),
+      h('button', {class:'btn sm danger', type:'button', text:'Desativar', onclick:function(){ dialog({title:'Desativar página pública', sub:'O link para de funcionar e a cópia pública é apagada. A árvore em si não muda.', actions:[{label:'Desativar', danger:true, onclick:stopPublic}]}); }})
+    ]));
+    box.appendChild(h('p', {class:'auth-fine', text:'A página pública se atualiza sozinha enquanto um administrador está com a árvore aberta. "Gerar link novo" desativa o anterior.'}));
+  } else {
+    box.appendChild(h('div', {class:'actions'}, [fotosLbl, h('button', {class:'btn sm primary', type:'button', text:'Criar link público', onclick:function(){ setPublic(cb.checked); }})]));
+  }
+  return box;
+}
+
+/* ----- visitante: abre a árvore pública sem login ----- */
+function publicDb(code){
+  var col = fb.fs.collection('publicos').doc(code).collection('pessoas');
+  return {collection:function(n){
+    if(n === 'pessoas') return col;
+    return {onSnapshot:function(next){ setTimeout(function(){ next({docs:[], metadata:{fromCache:false}}); }, 0); return function(){}; }, doc:function(){ return {set:function(){ return Promise.reject({code:'permission-denied'}); }, delete:function(){ return Promise.reject({code:'permission-denied'}); }}; }};
+  }};
+}
+function startPublic(code){
+  pub.view = code;
+  renderAuth('loading', 'Abrindo a árvore…');
+  fb.fs.collection('publicos').doc(code).get().then(function(d){
+    if(!d.exists || !(d.data() || {}).ativo){
+      authCard([h('h2', {class:'auth-h2', text:'Este link público não está mais ativo'}),
+        h('p', {class:'auth-sub', text:'Peça um link novo a quem administra a árvore, ou entre na sua conta.'}),
+        h('button', {class:'btn primary wide', type:'button', text:'Entrar ou criar conta', onclick:function(){ location.href = location.pathname; }})]);
+      return;
+    }
+    var m = d.data();
+    pub.viewTree = m.arvore; pub.viewName = m.nomeArvore || 'Árvore da família';
+    document.body.classList.add('public-view');
+    lockApp(false);
+    document.title = pub.viewName;
+    var h1 = document.querySelector('header.top h1'); if(h1) h1.textContent = pub.viewName;
+    var chip = $('userChip'); chip.hidden = false; chip.innerHTML = '';
+    chip.appendChild(h('button', {class:'btn sm primary', type:'button', text:'Entrar / criar conta', onclick:function(){ afterLoginGo('join', false); }}));
+    P = {}; G = {}; resetBaseline();
+    attachDb(publicDb(code), true);
+    var focus = P.thais ? 'thais' : null; if(focus) focusId = focus;
+  }, function(e){
+    authCard([h('h2', {class:'auth-h2', text:'Não consegui abrir a árvore pública'}), h('p', {class:'auth-sub', text:'Erro: ' + (e.code || 'desconhecido') + '. Recarregue a página.'})]);
+  });
+}
+// guarda o que fazer depois do login e vai para a tela de entrada
+function afterLoginGo(acao, criar){
+  try{ sessionStorage.setItem('depoisLogin', JSON.stringify({acao:acao, arvore:pub.viewTree, nome:pub.viewName})); if(criar) sessionStorage.setItem('abrirCadastro', '1'); }catch(e){}
+  location.href = location.pathname;
+}
+function publicBanner(){
+  setBanner('Você está vendo a árvore pública "' + pub.viewName + '". Contatos e datas completas de pessoas vivas ficam ocultos.', 'info', [
+    {label:'Pedir para participar', primary:true, onclick:function(){ afterLoginGo('join', false); }},
+    {label:'Criar meu cadastro', onclick:function(){ afterLoginGo('join', true); }}
+  ]);
 }
 
 /* ---------- início ---------- */
