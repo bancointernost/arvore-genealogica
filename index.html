@@ -2979,7 +2979,7 @@ var FIREBASE_CONFIG = {
   measurementId: "G-VR321L45NV"
 };
 // 2) E-mails que administram a árvore (aprovam quem pede acesso). Use o mesmo e-mail nas regras do Firestore.
-var ADMIN_EMAILS = ['bancointernost@gmail.com', 'smonthefor.totvs@gmail.com'];
+var ADMIN_EMAILS = ['smonthefor@gmail.com', 'bancointernost@gmail.com', 'smonthefor.totvs@gmail.com'];
 
 var fb = {app:null, auth:null, fs:null, user:null, email:'', role:null, isAdmin:false, unsub:[]};
 function firebaseConfigured(){ return typeof firebase !== 'undefined' && FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey.indexOf('COLE') !== 0; }
