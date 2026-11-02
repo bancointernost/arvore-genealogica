@@ -818,7 +818,7 @@ function normalize(){
     var p = P[id]; p.id = id; p.conj = Array.isArray(p.conj) ? p.conj.filter(function(c){return P[c] && c !== id;}) : [];
     if(p.pai && !P[p.pai]) p.pai = null; if(p.mae && !P[p.mae]) p.mae = null;
     if(typeof p.ord !== 'number') p.ord = 0;
-    ['nome','sexo','notas','nasc','falec','local','foto','whats','tel2','insta','face','tiktok','link','apelido','profissao','cidade','email','fontes'].forEach(function(k){ if(typeof p[k] !== 'string') p[k] = ''; });
+    ['nome','sexo','notas','nasc','falec','local','foto','whats','tel2','insta','face','tiktok','link','apelido','profissao','cidade','email','fontes','convite'].forEach(function(k){ if(typeof p[k] !== 'string') p[k] = ''; });
     if(p.foto && p.foto.indexOf('data:image/') !== 0) p.foto = '';
   });
   // cônjuges simétricos
@@ -1317,7 +1317,8 @@ function renderFocusPanel(f){
     h('button', {class:'btn sm', type:'button', text:'+ Cônjuge', onclick:function(){ openForm({spouseOf:f.id}); }}),
     h('button', {class:'btn sm', type:'button', text:'+ Irmão(ã)', onclick:function(){ openForm({siblingOf:f.id}); }}),
     h('button', {class:'btn sm', type:'button', text:'Grupo familiar', onclick:function(){ openFamilyOf(f.id); }}),
-    h('button', {class:'btn sm', type:'button', text:'Parentesco…', onclick:function(){ $('relA').value = ROOT; $('relB').value = f.id; showView('parentesco'); renderRel(); }})
+    h('button', {class:'btn sm', type:'button', text:'Parentesco…', onclick:function(){ $('relA').value = ROOT; $('relB').value = f.id; showView('parentesco'); renderRel(); }}),
+    (typeof fb !== 'undefined' && fb.isAdmin && !f.ni && isLiving(f)) ? h('button', {class:'btn sm primary', type:'button', text:f.convite ? '✉ Convite enviado' : '✉ Enviar convite', onclick:function(){ openPersonInvite(f.id); }}) : null
   ]));
 }
 function renderFamilyPanel(f){
@@ -2327,6 +2328,7 @@ function attachDb(db, readOnly){
     shared.ready = true; clearTimeout(timer); showLoading(false); setBanner('');
     if(readOnly) applyReadOnlyUI();
     applyServer(); renderAll(true); updateStatus(); checkEmpty();
+    if(typeof afterTreeReady === 'function') afterTreeReady();
   }
   function onErr(e){
     var c = e && e.code;
@@ -3202,6 +3204,7 @@ function joinByCode(raw, errEl){
   fb.fs.collection('convites').doc(code).get().then(function(d){
     if(!d.exists){ err('Código inválido ou desativado. Peça um novo a quem administra a árvore.'); return; }
     var c = d.data();
+    if(c.pessoa){ try{ sessionStorage.setItem('vincularPessoa', JSON.stringify({arvore:c.arvore, pessoa:c.pessoa})); }catch(e){} }
     if(tree.mine.some(function(a){ return a.arvore === c.arvore; })){ goTree(c.arvore); return; }
     if(c.papel === 'editor' || c.papel === 'leitor'){
       renderAuth('loading', 'Entrando em "' + (c.nomeArvore || 'árvore') + '"…');
@@ -3783,6 +3786,63 @@ function changeEmail(novo, opt, errEl){
       h('div', {class:'auth-actions'}, [h('button', {class:'btn', type:'button', text:'Voltar', onclick:function(){ location.reload(); }})])]);
   });
 }
+/* ----- convite pessoal (a partir do cadastro da pessoa) ----- */
+function afterTreeReady(){
+  var v = null; try{ v = JSON.parse(sessionStorage.getItem('vincularPessoa') || 'null'); }catch(e){}
+  if(!v || v.arvore !== tree.id) return;
+  try{ sessionStorage.removeItem('vincularPessoa'); }catch(e){}
+  if(!P[v.pessoa]) return;
+  setMe(v.pessoa); focusId = v.pessoa; famStart = v.pessoa; save();
+  showView('perfil');
+  toast('Bem-vindo(a), ' + firstName(P[v.pessoa]) + '! Este é o seu cadastro: confira e complete.');
+}
+function personInviteMsg(p, link){
+  return 'Oi, ' + (p.apelido || firstName(p)) + '! Montei a árvore genealógica da família "' + tree.nome + '" e você está nela. Entre por este link para ver a árvore e completar seu cadastro (foto, contatos, histórias): ' + link;
+}
+function openPersonInvite(pid){
+  var p = P[pid]; if(!p) return;
+  var body = h('div');
+  function showLink(code){
+    body.innerHTML = '';
+    var link = codeLink(code), msg = personInviteMsg(p, link), wa = waNumber(p.whats);
+    var inp = h('input', {type:'text', id:'pInvLink', value:link, readonly:true, 'aria-label':'Link do convite'});
+    body.appendChild(h('div', {class:'invite-code'}, [h('span', {class:'lbl', text:'Convite de ' + firstName(p)}), h('b', {text:fmtCode(code)})]));
+    body.appendChild(h('p', {class:'muted', style:'margin:0 0 8px', text:'Quem abrir este link entra direto na árvore e já fica ligado(a) ao cadastro de ' + displayName(p) + '.'}));
+    body.appendChild(h('div', {class:'member-add', style:'margin-top:0;padding-top:0;border-top:0'}, [inp]));
+    var acts = h('div', {class:'actions'});
+    var waA = h('a', {class:'ct wa', href:'https://wa.me/' + (wa || '') + '?text=' + encodeURIComponent(msg), target:'_blank', rel:'noopener noreferrer'});
+    waA.innerHTML = ICONS.wa; waA.appendChild(h('span', {text:wa ? 'Enviar para ' + fmtPhone(p.whats) : 'Enviar no WhatsApp'}));
+    acts.appendChild(waA);
+    acts.appendChild(h('button', {class:'btn sm', type:'button', text:'Copiar mensagem', onclick:function(){ try{ navigator.clipboard.writeText(msg).then(function(){ toast('Mensagem copiada'); }, function(){ inp.select(); }); }catch(e){ inp.select(); } }}));
+    if(p.email) acts.appendChild(h('a', {class:'btn sm', href:'mailto:' + encodeURIComponent(p.email) + '?subject=' + encodeURIComponent('Árvore da família') + '&body=' + encodeURIComponent(msg), text:'Enviar por e-mail'}));
+    body.appendChild(acts);
+    body.appendChild(h('p', {class:'auth-fine', text:'O link só deve ir para ' + firstName(p) + ': quem tiver ele entra na árvore. Para cancelar, gere um convite novo.'}));
+  }
+  function create(papel){
+    var code = newCode(), old = p.convite;
+    var bt = fb.fs.batch();
+    bt.set(fb.fs.collection('convites').doc(code), {arvore:tree.id, nomeArvore:tree.nome, papel:papel, pessoa:pid, pessoaNome:p.nome, criadoPor:fb.email, criadoEm:firebase.firestore.FieldValue.serverTimestamp()});
+    if(old) bt.delete(fb.fs.collection('convites').doc(old));
+    bt.commit().then(function(){ P[pid].convite = code; save(); showLink(code); toast('Convite criado'); },
+      function(e){ toast('Não foi possível criar o convite (' + (e.code || 'erro') + ').'); });
+  }
+  function chooser(){
+    body.innerHTML = '';
+    var sel = h('select', {id:'pInvPapel', 'aria-label':'Acesso'}, [h('option', {value:'editor', text:'Editor: vê e pode cadastrar a família'}), h('option', {value:'leitor', text:'Leitor: só vê a árvore'})]);
+    body.appendChild(h('p', {class:'muted', style:'margin:0 0 10px', text:'Gere um link só para ' + displayName(p) + '. Ao abrir, a pessoa entra direto na árvore, sem precisar de aprovação, e cai no próprio cadastro para completar.'}));
+    body.appendChild(h('div', {class:'member-add', style:'margin-top:0;padding-top:0;border-top:0'}, [h('span', {class:'muted', text:'Acesso:'}), sel,
+      h('button', {class:'btn sm primary', type:'button', text:p.convite ? 'Gerar convite novo' : 'Criar convite', onclick:function(){ create(sel.value); }})]));
+    if(p.convite) body.appendChild(h('p', {class:'auth-fine', text:'Gerar um convite novo cancela o anterior.'}));
+  }
+  if(p.convite){
+    fb.fs.collection('convites').doc(p.convite).get().then(function(d){
+      if(d.exists){ showLink(p.convite); body.appendChild(h('div', {class:'actions'}, [h('button', {class:'btn sm', type:'button', text:'Gerar convite novo', onclick:chooser})])); }
+      else chooser();
+    }, chooser);
+  } else chooser();
+  dialog({title:'Convidar ' + displayName(p), body:[body], cancel:'Fechar'});
+}
+
 /* ----- administrador: trocas de e-mail ----- */
 function moveMember(old, novo, papelHint){
   old = old.toLowerCase(); novo = novo.toLowerCase();
