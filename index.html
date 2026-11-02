@@ -456,7 +456,7 @@ body.auth-locked header.top, body.auth-locked main, body.auth-locked #banner{dis
 .linkbtn{background:none;border:0;padding:0;color:var(--blue);font-size:.84rem;font-weight:600}
 .linkbtn:hover{text-decoration:underline}
 .auth-h2{font-size:1.15rem;margin-top:4px}
-.auth-card .lbl{font-size:.72rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--soft)}
+.auth-card .lbl, .modal .lbl{font-size:.72rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--soft)}
 .btn.wide{width:100%;justify-content:center;padding:11px 14px}
 .auth-user .linkbtn{flex:none}
 .tree-list{display:grid;gap:8px}
@@ -484,6 +484,12 @@ body.auth-locked header.top, body.auth-locked main, body.auth-locked #banner{dis
 body.public-view nav.tabs button[data-view="perfil"], body.public-view nav.tabs button[data-view="revisar"], body.public-view nav.tabs button[data-view="membros"]{display:none}
 body.read-only #focusPanel .actions button:nth-child(-n+4), body.read-only .focus-photo .btn, body.read-only .origin-add, body.read-only .fg-kids .lbl .btn,
 body.read-only .fg-person.vazio, body.read-only button.empty-slot, body.read-only .full-sec-head .btn{display:none}
+.who-links{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.acc-cur{display:flex;flex-direction:column;gap:2px;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:6px}
+.acc-h3{font-family:var(--font-body);font-size:.76rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--teal);margin:14px 0 4px}
+.acc-trees{display:grid;gap:4px;margin-top:6px}
+.acc-tree{display:flex;justify-content:space-between;gap:10px;font-size:.88rem;border-bottom:1px solid var(--border);padding:5px 0}
+.acc-tree small{color:var(--soft)}
 .gbtn{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;padding:12px 16px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#1f1f1f;font-weight:600;font-size:1rem;box-shadow:0 1px 2px rgba(0,0,0,.06);transition:box-shadow .15s,border-color .15s}
 .gbtn:hover{border-color:#9aa3ad;box-shadow:0 4px 14px -6px rgba(0,0,0,.25)}
 .user-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);border-radius:24px;padding:3px 4px 3px 4px;background:var(--card)}
@@ -3063,23 +3069,25 @@ function renderAuth(state, info){
     ]); return;
   }
   if(state === 'verify'){
-    var vu = fb.user;
-    authCard([
-      h('div', {class:'auth-ok', text:'Enviamos um link de confirmação para ' + vu.email + '. Abra seu e-mail, clique no link e depois volte aqui.'}),
-      h('p', {class:'auth-fine', text:'Não chegou? Confira a caixa de spam ou peça outro link.'}),
-      info ? h('div', {class:'auth-err', role:'alert', text:info}) : null,
+    var vu = fb.user, vi = info || {};
+    var note = h('div', {class:'auth-ok', hidden:!vi.sent, text:'Link enviado para ' + vu.email + '. Abra seu e-mail (veja também o spam), clique no link e depois volte aqui.'});
+    var verr = h('div', {class:'auth-err', role:'alert', hidden:!vi.msg, text:vi.msg || ''});
+    authCard([whoBox(),
+      h('h2', {class:'auth-h2', text:'Confirme seu e-mail'}),
+      h('p', {class:'auth-sub', text:'Você foi liberado(a) ' + (vi.nome ? 'na árvore "' + vi.nome + '"' : 'nesta árvore') + ' pelo e-mail ' + vu.email + '. Para ter certeza de que é você mesmo, confirme esse e-mail uma única vez.'}),
+      note, verr,
       h('div', {class:'auth-actions'}, [
-        h('button', {class:'btn primary', type:'button', text:'Já confirmei', onclick:function(){
+        h('button', {class:'btn primary', type:'button', text:'Enviar link de confirmação', onclick:function(){
+          vu.sendEmailVerification().then(function(){ note.hidden = false; verr.hidden = true; }, function(e){ verr.hidden = false; verr.textContent = authErrorText(e); });
+        }}),
+        h('button', {class:'btn', type:'button', text:'Já confirmei', onclick:function(){
           vu.reload().then(function(){ return fb.auth.currentUser.getIdToken(true); }).then(function(){
-            if(fb.auth.currentUser.emailVerified) afterLogin(fb.auth.currentUser);
-            else renderAuth('verify', 'Ainda não aparece como confirmado. Clique no link do e-mail e tente de novo.');
-          }, function(e){ renderAuth('verify', authErrorText(e)); });
-        }}),
-        h('button', {class:'btn', type:'button', text:'Reenviar link', onclick:function(){
-          vu.sendEmailVerification().then(function(){ toast('Link reenviado para ' + vu.email); }, function(e){ renderAuth('verify', authErrorText(e)); });
-        }}),
-        h('button', {class:'btn', type:'button', text:'Sair', onclick:signOut})
-      ])
+            if(fb.auth.currentUser.emailVerified) location.reload();
+            else { verr.hidden = false; verr.textContent = 'Ainda não aparece como confirmado. Clique no link do e-mail e tente de novo.'; }
+          }, function(e){ verr.hidden = false; verr.textContent = authErrorText(e); });
+        }})
+      ]),
+      h('div', {class:'auth-actions'}, [h('button', {class:'btn', type:'button', text:'Ver minhas árvores', onclick:goPicker})])
     ]); return;
   }
 
@@ -3117,7 +3125,7 @@ function emailForm(info){
     if(mode === 'criar'){
       fb.auth.createUserWithEmailAndPassword(e, p).then(function(cred){
         var n = nm.value.trim();
-        return (n ? cred.user.updateProfile({displayName:n}) : Promise.resolve()).then(function(){ return cred.user.sendEmailVerification(); });
+        return n ? cred.user.updateProfile({displayName:n}) : null;
       }).catch(fail);
     } else fb.auth.signInWithEmailAndPassword(e, p).catch(fail);
   });
@@ -3163,7 +3171,6 @@ function startFirebase(){
     fb.unsub.forEach(function(x){ try{ x(); }catch(e){} }); fb.unsub = [];
     if(!u){ renderAuth('login'); return; }
     fb.user = u;
-    if(!u.emailVerified){ renderAuth('verify'); return; }
     afterLogin(u);
   });
 }
@@ -3214,7 +3221,7 @@ function whoBox(){
   return h('div', {class:'auth-user'}, [
     u.photoURL ? h('img', {src:u.photoURL, alt:'', referrerpolicy:'no-referrer'}) : h('div', {class:'av', text:(u.displayName || u.email || '?')[0].toUpperCase()}),
     h('div', {style:'flex:1;min-width:0'}, [h('b', {text:u.displayName || 'Sua conta'}), h('div', {class:'muted', text:u.email})]),
-    h('button', {class:'linkbtn', type:'button', text:'Sair', onclick:signOut})
+    h('div', {class:'who-links'}, [h('button', {class:'linkbtn', type:'button', text:'Minha conta', onclick:openAccount}), h('button', {class:'linkbtn', type:'button', text:'Sair', onclick:signOut})])
   ]);
 }
 function afterLogin(u){
@@ -3250,7 +3257,7 @@ function afterLogin(u){
     var after = tree.mine.map(function(a){ return a.arvore + ':' + a.papel; }).join('|');
     if(entered && tree.id){
       var me = tree.mine.filter(function(a){ return a.arvore === tree.id; })[0];
-      if(!me || me.papel !== fb.role){ toast('Seu acesso a esta árvore mudou. Recarregando…'); setTimeout(function(){ location.reload(); }, 1200); }
+      if(!tree.migrating && (!me || me.papel !== fb.role)){ toast('Seu acesso a esta árvore mudou. Recarregando…'); setTimeout(function(){ location.reload(); }, 1200); }
       return;
     }
     if(before !== after || !entered) decide();
@@ -3268,7 +3275,7 @@ function renderPicker(msg){
   tree.mine.forEach(function(a){
     list.appendChild(h('button', {class:'tree-item', type:'button', onclick:function(){ goTree(a.arvore); }}, [
       h('span', {class:'tree-ico', 'aria-hidden':'true', text:'🌳'}),
-      h('span', {class:'tree-txt'}, [h('b', {text:a.nomeArvore || 'Árvore sem nome'}), h('small', {text:papelNome(a.papel)})]),
+      h('span', {class:'tree-txt'}, [h('b', {text:a.nomeArvore || 'Árvore sem nome'}), h('small', {text:papelNome(a.papel) + (a.exigeVerificado && !fb.user.emailVerified ? ' · confirme seu e-mail para abrir' : '')})]),
       h('span', {class:'tree-go', 'aria-hidden':'true', text:'›'})
     ]));
   });
@@ -3381,6 +3388,7 @@ function renderJoin(id, nomeDado){
 /* ----- dentro da árvore ----- */
 function openTree(id){
   var acc = tree.mine.filter(function(a){ return a.arvore === id; })[0];
+  if(acc.exigeVerificado && !fb.user.emailVerified){ renderAuth('verify', {nome:acc.nomeArvore}); return; }
   tree.id = id; tree.nome = acc.nomeArvore || 'Árvore'; fb.role = acc.papel; fb.isAdmin = acc.papel === 'admin';
   try{ localStorage.setItem('arvore-ultima-' + fb.email, id); }catch(e){}
   if(!qs('arvore')) try{ history.replaceState(null, '', location.pathname + '?arvore=' + encodeURIComponent(id)); }catch(e){}
@@ -3392,6 +3400,7 @@ function openTree(id){
   chip.appendChild(u.photoURL ? h('img', {src:u.photoURL, alt:'', referrerpolicy:'no-referrer'}) : h('span', {class:'av sm', text:(u.displayName || fb.email)[0].toUpperCase()}));
   chip.appendChild(h('span', {class:'uc-name', text:(u.displayName || fb.email).split(' ')[0]}));
   chip.appendChild(h('span', {class:'uc-role', text:papelNome(fb.role)}));
+  chip.appendChild(h('button', {class:'btn sm', type:'button', text:'Conta', title:'Minha conta: trocar e-mail', onclick:openAccount}));
   chip.appendChild(h('button', {class:'btn sm', type:'button', text:'Sair', onclick:signOut}));
   if(fb.isAdmin){ $('tabMembros').hidden = false; watchMembers(); }
   // nome atualizado da árvore
@@ -3413,6 +3422,11 @@ function openTree(id){
 /* ----- membros da árvore (administrador) ----- */
 var membersState = {pedidos:[], membros:[]};
 function watchMembers(){
+  fb.unsub.push(fb.fs.collection('trocas').where('arvore', '==', tree.id).onSnapshot(function(s){
+    membersState.trocas = s.docs.map(function(d){ return Object.assign({tid:d.id}, d.data()); });
+    var b = $('membersBadge'), n = membersState.pedidos.length + membersState.trocas.length; b.hidden = !n; b.textContent = n;
+    if(current === 'membros') renderMembers();
+  }, function(){}));
   fb.unsub.push(fb.fs.collection('pedidos').where('arvore', '==', tree.id).onSnapshot(function(s){
     var n0 = membersState.pedidos.length;
     membersState.pedidos = s.docs.map(function(d){ return Object.assign({pid:d.id}, d.data()); });
@@ -3474,7 +3488,7 @@ function grant(email, papel, extra){
     aprovadoPor:fb.email, aprovadoEm:firebase.firestore.FieldValue.serverTimestamp()}, extra || {}), {merge:true});
 }
 function approve(req, papel){
-  grant(req.email, papel, {nome:req.nome || '', foto:req.foto || ''})
+  grant(req.email, papel, {nome:req.nome || '', foto:req.foto || '', exigeVerificado:false})
     .then(function(){ return fb.fs.collection('pedidos').doc(req.pid).delete(); })
     .then(function(){ toast((req.nome || req.email) + ' agora tem acesso como ' + papelNome(papel).toLowerCase()); }, function(e){ toast('Não foi possível aprovar (' + (e.code || 'erro') + ').'); });
 }
@@ -3519,6 +3533,7 @@ function renderMembers(){
   });
   box.appendChild(reqs);
 
+  var sw = swapsPanel(); if(sw) box.appendChild(sw);
   var mem = h('section', {class:'panel', style:'margin-top:16px'}, [h('h3', {text:'Membros (' + membersState.membros.length + ')'})]);
   membersState.membros.slice().sort(function(a, b){ return (a.nome || a.email).localeCompare(b.nome || b.email, 'pt-BR'); }).forEach(function(m){
     var self = m.email === fb.email;
@@ -3528,7 +3543,7 @@ function renderMembers(){
     mem.appendChild(h('div', {class:'member'}, [
       m.foto ? h('img', {src:m.foto, alt:'', referrerpolicy:'no-referrer'}) : h('span', {class:'av sm', text:(m.nome || m.email)[0].toUpperCase()}),
       h('div', {class:'m-info'}, [h('b', {text:(m.nome || m.email) + (self ? ' (você)' : '')}), h('div', {class:'muted', text:m.email})]),
-      h('div', {class:'actions'}, [sel, self ? null : h('button', {class:'btn sm danger', type:'button', text:'Remover', onclick:function(){
+      h('div', {class:'actions'}, [sel, self ? null : h('button', {class:'btn sm', type:'button', text:'Trocar e-mail', onclick:function(){ askMoveMember(m); }}), self ? null : h('button', {class:'btn sm danger', type:'button', text:'Remover', onclick:function(){
         dialog({title:'Remover acesso', sub:(m.nome || m.email) + ' não vai mais conseguir abrir esta árvore.', actions:[{label:'Remover', danger:true, onclick:function(){ fb.fs.collection('acessos').doc(tree.id + '__' + m.email).delete().then(function(){ toast('Acesso removido'); }); }}]});
       }})])
     ]));
@@ -3539,7 +3554,7 @@ function renderMembers(){
     h('button', {class:'btn sm primary', type:'button', text:'Liberar', onclick:function(){
       var em = addIn.value.trim().toLowerCase();
       if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)){ toast('Digite um e-mail válido.'); return; }
-      grant(em, addRole.value, {nome:''}).then(function(){ addIn.value = ''; toast(em + ' liberado(a)'); }, function(e){ toast('Não foi possível liberar (' + (e.code || 'erro') + ').'); });
+      grant(em, addRole.value, {nome:'', exigeVerificado:true}).then(function(){ addIn.value = ''; toast(em + ' liberado(a)'); }, function(e){ toast('Não foi possível liberar (' + (e.code || 'erro') + ').'); });
     }})]));
   box.appendChild(mem);
 }
@@ -3681,6 +3696,134 @@ function publicBanner(){
     {label:'Pedir para participar', primary:true, onclick:function(){ afterLoginGo('join', false); }},
     {label:'Criar meu cadastro', onclick:function(){ afterLoginGo('join', true); }}
   ]);
+}
+
+/* ================= minha conta: trocar e-mail ================= */
+// trocas/{arvore}__{uid}  pedido de troca de e-mail para árvores onde a pessoa não é administradora
+function isPasswordUser(){ return !!(fb.user && (fb.user.providerData || []).some(function(p){ return p && p.providerId === 'password'; })); }
+function validEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
+function openAccount(){
+  var u = fb.user;
+  var novo = h('input', {type:'email', id:'accNew', placeholder:'novo e-mail', autocomplete:'email'});
+  var novo2 = h('input', {type:'email', id:'accNew2', placeholder:'repita o novo e-mail', autocomplete:'off'});
+  var pw = h('input', {type:'password', id:'accPass', placeholder:'sua senha atual', autocomplete:'current-password'});
+  var alsoLogin = h('input', {type:'checkbox', id:'accAlsoLogin'}); alsoLogin.checked = true;
+  var err = h('div', {class:'auth-err', role:'alert', hidden:true});
+  var pass = isPasswordUser();
+  var trees = h('div', {class:'acc-trees'});
+  (tree.mine || []).forEach(function(a){
+    trees.appendChild(h('div', {class:'acc-tree'}, [h('span', {text:'🌳 ' + (a.nomeArvore || 'Árvore')}), h('small', {text:papelNome(a.papel) + (a.papel === 'admin' ? ' · troca imediata' : ' · o administrador aprova')})]));
+  });
+  if(!(tree.mine || []).length) trees.appendChild(h('div', {class:'muted', text:'Você ainda não participa de nenhuma árvore.'}));
+  var body = [
+    h('div', {class:'acc-cur'}, [h('span', {class:'lbl', text:'E-mail atual'}), h('b', {text:u.email}),
+      h('small', {class:'muted', text:pass ? 'Conta com e-mail e senha' : 'Conta Google'})]),
+    h('h3', {class:'acc-h3', text:'Trocar o e-mail de acesso'}),
+    h('p', {class:'muted', style:'margin:0 0 8px', text:pass
+      ? 'Seus acessos às árvores passam para o novo e-mail. Você também pode mudar o e-mail de login: enviamos um link de confirmação para o novo endereço.'
+      : 'O Google não permite mudar o e-mail de uma conta Google. Seus acessos às árvores passam para o novo e-mail, e depois você entra com ele (pelo Google, se for Gmail, ou criando uma senha).'}),
+    h('div', {class:'auth-form'}, [novo, novo2,
+      pass ? h('label', {class:'check', for:'accAlsoLogin'}, [alsoLogin, 'Trocar também o e-mail de login (mantém a mesma senha)']) : null,
+      pass ? pw : null, err]),
+    h('div', {class:'lbl', style:'margin-top:12px', text:'Suas árvores'}), trees
+  ];
+  var close = dialog({title:'Minha conta', body:body, cancel:'Fechar', actions:[{label:'Trocar e-mail', primary:true, onclick:function(){
+    err.hidden = true;
+    var n = novo.value.trim().toLowerCase();
+    if(!validEmail(n)){ err.hidden = false; err.textContent = 'Digite um e-mail válido.'; return false; }
+    if(n !== novo2.value.trim().toLowerCase()){ err.hidden = false; err.textContent = 'Os dois e-mails estão diferentes.'; return false; }
+    if(n === fb.email){ err.hidden = false; err.textContent = 'Esse já é o seu e-mail atual.'; return false; }
+    if(pass && alsoLogin.checked && !pw.value){ err.hidden = false; err.textContent = 'Digite sua senha atual para trocar o e-mail de login.'; return false; }
+    changeEmail(n, {login:pass && alsoLogin.checked, senha:pw.value}, err);
+    return false;
+  }}]});
+}
+function changeEmail(novo, opt, errEl){
+  var old = fb.email, u = fb.user;
+  tree.migrating = true;
+  renderAuth('loading', 'Transferindo seus acessos para ' + novo + '…');
+  $('modalRoot').innerHTML = '';
+  var mine = (tree.mine || []).slice();
+  var admins = mine.filter(function(a){ return a.papel === 'admin'; });
+  var others = mine.filter(function(a){ return a.papel !== 'admin'; });
+  var bt = fb.fs.batch();
+  admins.forEach(function(a){
+    var nd = Object.assign({}, a, {email:novo, exigeVerificado:true, migradoDe:old, aprovadoPor:old, aprovadoEm:firebase.firestore.FieldValue.serverTimestamp()});
+    bt.set(fb.fs.collection('acessos').doc(a.arvore + '__' + novo), nd);
+    bt.delete(fb.fs.collection('acessos').doc(a.arvore + '__' + old));
+  });
+  others.forEach(function(a){
+    bt.set(fb.fs.collection('trocas').doc(a.arvore + '__' + u.uid), {arvore:a.arvore, uid:u.uid, de:old, para:novo, papel:a.papel,
+      nome:u.displayName || '', nomeArvore:a.nomeArvore || '', pedidoEm:firebase.firestore.FieldValue.serverTimestamp()});
+  });
+  var step = (admins.length || others.length) ? bt.commit() : Promise.resolve();
+  step.then(function(){
+    if(!opt.login) return 'acessos';
+    var cred = firebase.auth.EmailAuthProvider.credential(old, opt.senha);
+    return u.reauthenticateWithCredential(cred).then(function(){ return u.verifyBeforeUpdateEmail(novo); }).then(function(){ return 'login'; });
+  }).then(function(kind){
+    var lines = [];
+    if(admins.length) lines.push('Pronto nas árvores que você administra: ' + admins.map(function(a){ return a.nomeArvore; }).join(', ') + '.');
+    if(others.length) lines.push('Pedido de troca enviado para o administrador de: ' + others.map(function(a){ return a.nomeArvore; }).join(', ') + '. Até ele aprovar, continue entrando com ' + old + '.');
+    if(kind === 'login') lines.push('Enviamos um link de confirmação para ' + novo + '. Clique nele para concluir a troca do e-mail de login; depois entre com o novo e-mail e a mesma senha.');
+    else lines.push('Agora saia e entre com ' + novo + (validEmail(novo) && /@gmail\.com$/.test(novo) ? ' (pode usar "Entrar com Google")' : ' (use "Criar conta" na primeira vez)') + '.');
+    authCard([whoBox(), h('h2', {class:'auth-h2', text:'E-mail em transferência'})].concat(lines.map(function(t){ return h('div', {class:'auth-ok', text:t}); })).concat([
+      h('div', {class:'auth-actions'}, [h('button', {class:'btn primary', type:'button', text:'Sair e entrar com o novo e-mail', onclick:signOut}),
+        others.length && !admins.length ? h('button', {class:'btn', type:'button', text:'Voltar às árvores', onclick:goPicker}) : null])
+    ]));
+  }, function(e){
+    tree.migrating = false;
+    var c = e && e.code || '';
+    var t = c === 'auth/wrong-password' || c === 'auth/invalid-credential' || c === 'auth/invalid-login-credentials' ? 'Senha atual incorreta. Os acessos das árvores que você administra já foram transferidos; tente de novo só a troca do login.'
+      : c === 'auth/email-already-in-use' ? 'Já existe uma conta com o e-mail ' + novo + '. Entre com ela: seus acessos já foram transferidos para esse e-mail.'
+      : c === 'auth/requires-recent-login' ? 'Por segurança, saia e entre de novo antes de trocar o e-mail de login.'
+      : c === 'permission-denied' ? 'O banco recusou a troca. Confira se as regras novas do Firestore foram publicadas.'
+      : 'Não foi possível concluir (' + (c || 'erro') + ').';
+    authCard([whoBox(), h('h2', {class:'auth-h2', text:'Troca de e-mail'}), h('div', {class:'auth-err', text:t}),
+      h('div', {class:'auth-actions'}, [h('button', {class:'btn', type:'button', text:'Voltar', onclick:function(){ location.reload(); }})])]);
+  });
+}
+/* ----- administrador: trocas de e-mail ----- */
+function moveMember(old, novo, papelHint){
+  old = old.toLowerCase(); novo = novo.toLowerCase();
+  var cur = membersState.membros.filter(function(m){ return m.email === old; })[0];
+  if(!cur) return Promise.reject({code:'not-found'});
+  var bt = fb.fs.batch();
+  bt.set(fb.fs.collection('acessos').doc(tree.id + '__' + novo), Object.assign({}, cur, {email:novo, exigeVerificado:true, papel:papelHint || cur.papel, migradoDe:old, aprovadoPor:fb.email, aprovadoEm:firebase.firestore.FieldValue.serverTimestamp()}));
+  bt.delete(fb.fs.collection('acessos').doc(tree.id + '__' + old));
+  return bt.commit();
+}
+function askMoveMember(m){
+  var inp = h('input', {type:'email', id:'mvNew', placeholder:'novo e-mail', autocomplete:'off'});
+  var err = h('div', {class:'auth-err', role:'alert', hidden:true});
+  dialog({title:'Trocar e-mail de ' + (m.nome || m.email), sub:'O acesso desta pessoa passa do e-mail ' + m.email + ' para o novo, com o mesmo papel.',
+    body:[h('div', {class:'auth-form'}, [inp, err])],
+    actions:[{label:'Trocar e-mail', primary:true, onclick:function(close){
+      var n = inp.value.trim().toLowerCase();
+      if(!validEmail(n)){ err.hidden = false; err.textContent = 'Digite um e-mail válido.'; return false; }
+      moveMember(m.email, n).then(function(){ toast('Acesso transferido para ' + n); close(); }, function(e){ err.hidden = false; err.textContent = 'Não foi possível (' + (e.code || 'erro') + ').'; });
+      return false;
+    }}]});
+}
+function approveSwap(t){
+  moveMember(t.de, t.para).then(function(){ return fb.fs.collection('trocas').doc(t.tid).delete(); })
+    .then(function(){ toast('E-mail de ' + (t.nome || t.de) + ' trocado para ' + t.para); }, function(e){ toast('Não foi possível aprovar (' + (e.code || 'erro') + ').'); });
+}
+function swapsPanel(){
+  var list = membersState.trocas || [];
+  if(!list.length) return null;
+  var sec = h('section', {class:'panel', style:'margin-top:16px'}, [h('h3', {text:'Pedidos de troca de e-mail (' + list.length + ')'})]);
+  list.forEach(function(t){
+    sec.appendChild(h('div', {class:'member'}, [
+      h('span', {class:'av sm', text:(t.nome || t.de || '?')[0].toUpperCase()}),
+      h('div', {class:'m-info'}, [h('b', {text:t.nome || t.de}), h('div', {class:'muted', text:t.de + '  →  ' + t.para})]),
+      h('div', {class:'actions'}, [
+        h('button', {class:'btn sm primary', type:'button', text:'Aprovar troca', onclick:function(){ approveSwap(t); }}),
+        h('button', {class:'btn sm danger', type:'button', text:'Recusar', onclick:function(){ fb.fs.collection('trocas').doc(t.tid).delete().then(function(){ toast('Pedido recusado'); }); }})
+      ])
+    ]));
+  });
+  return sec;
 }
 
 /* ---------- início ---------- */
