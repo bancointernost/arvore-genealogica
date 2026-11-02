@@ -474,6 +474,13 @@ body.auth-locked header.top, body.auth-locked main, body.auth-locked #banner{dis
 .tree-opt span{display:flex;flex-direction:column}
 .tree-opt small{color:var(--soft);font-size:.8rem}
 .uc-tree{background:var(--leaf-pale);border:1px solid var(--leaf);color:var(--text);border-radius:20px;padding:3px 10px;font-weight:600;font-size:.8rem}
+.invite-box{display:flex;flex-direction:column;gap:6px;border:1px dashed var(--border);border-radius:10px;padding:12px}
+.invite-row{display:flex;gap:8px}
+.invite-row input{flex:1;min-width:0;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--bg);font-size:.95rem;letter-spacing:.04em}
+.invite-admin{margin-top:14px;padding-top:14px;border-top:1px dashed var(--border)}
+.invite-code{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin-bottom:10px}
+.invite-code b{font-family:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;font-size:1.6rem;letter-spacing:.12em;color:var(--head);background:var(--leaf-pale);border:1px solid var(--leaf);border-radius:8px;padding:3px 12px}
+.invite-code small{color:var(--soft);font-size:.82rem}
 .gbtn{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;padding:12px 16px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#1f1f1f;font-weight:600;font-size:1rem;box-shadow:0 1px 2px rgba(0,0,0,.06);transition:box-shadow .15s,border-color .15s}
 .gbtn:hover{border-color:#9aa3ad;box-shadow:0 4px 14px -6px rgba(0,0,0,.25)}
 .user-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);border-radius:24px;padding:3px 4px 3px 4px;background:var(--card)}
@@ -3164,6 +3171,33 @@ var tree = {id:null, nome:'', mine:[], myReqs:[], gotMine:false, gotReqs:false};
 function qs(k){ var m = new RegExp('[?&]' + k + '=([^&#]*)').exec(location.search); return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : ''; }
 function goTree(id){ try{ localStorage.setItem('arvore-ultima-' + fb.email, id); }catch(e){} location.href = location.pathname + '?arvore=' + encodeURIComponent(id); }
 function goPicker(){ location.href = location.pathname + '?escolher=1'; }
+var CODE_ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function newCode(){ var c = ''; var r = new Uint32Array(6); (window.crypto || window.msCrypto).getRandomValues(r); for(var i = 0; i < 6; i++) c += CODE_ABC[r[i] % CODE_ABC.length]; return c; }
+function fmtCode(c){ return c ? c.slice(0, 3) + '-' + c.slice(3) : ''; }
+function cleanCode(v){
+  v = (v || '').trim();
+  var m = v.match(/[?&]convite=([A-Za-z0-9-]+)/); if(m) v = m[1];
+  return v.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+}
+function codeLink(code){ return location.origin + location.pathname + '?convite=' + code; }
+// entra numa árvore por código (ou link com código)
+function joinByCode(raw, errEl){
+  var code = cleanCode(raw);
+  function err(t){ if(errEl){ errEl.hidden = false; errEl.textContent = t; } else renderPicker(t); }
+  if(code.length !== 6){ err('O código tem 6 letras/números, como ABC-123.'); return; }
+  fb.fs.collection('convites').doc(code).get().then(function(d){
+    if(!d.exists){ err('Código inválido ou desativado. Peça um novo a quem administra a árvore.'); return; }
+    var c = d.data();
+    if(tree.mine.some(function(a){ return a.arvore === c.arvore; })){ goTree(c.arvore); return; }
+    if(c.papel === 'editor' || c.papel === 'leitor'){
+      renderAuth('loading', 'Entrando em "' + (c.nomeArvore || 'árvore') + '"…');
+      fb.fs.collection('acessos').doc(c.arvore + '__' + fb.email).set({arvore:c.arvore, email:fb.email, papel:c.papel, nome:fb.user.displayName || '', foto:fb.user.photoURL || '',
+        nomeArvore:c.nomeArvore || '', convite:code, entrouEm:firebase.firestore.FieldValue.serverTimestamp()})
+        .then(function(){ toast('Bem-vindo(a) à árvore ' + (c.nomeArvore || '')); goTree(c.arvore); },
+              function(e){ err('Não foi possível entrar (' + (e.code || 'erro') + '). O código pode ter sido trocado.'); });
+    } else renderJoin(c.arvore, c.nomeArvore);
+  }, function(e){ err('Não consegui conferir o código (' + (e.code || 'erro') + ').'); });
+}
 function inviteLink(id, nome){ return location.origin + location.pathname + '?arvore=' + encodeURIComponent(id) + (nome ? '&nome=' + encodeURIComponent(nome) : ''); }
 function papelNome(p){ return {admin:'Administrador', editor:'Editor', leitor:'Leitor'}[p] || p; }
 function scopedDb(id){ var base = fb.fs.collection('arvores').doc(id); return {collection:function(n){ return base.collection(n); }}; }
@@ -3183,6 +3217,8 @@ function afterLogin(u){
   function decide(){
     if(entered || !tree.gotMine || !tree.gotReqs) return;
     var mineIds = tree.mine.map(function(a){ return a.arvore; });
+    var conv = qs('convite');
+    if(conv){ entered = true; try{ history.replaceState(null, '', location.pathname); }catch(e){} joinByCode(conv); return; }
     if(wanted){
       if(mineIds.indexOf(wanted) >= 0){ entered = true; openTree(wanted); return; }
       renderJoin(wanted); return;
@@ -3214,7 +3250,7 @@ function afterLogin(u){
 }
 
 /* ----- tela: minhas árvores ----- */
-function renderPicker(){
+function renderPicker(msg){
   lockApp(true);
   var list = h('div', {class:'tree-list'});
   tree.mine.forEach(function(a){
@@ -3228,10 +3264,23 @@ function renderPicker(){
   authCard([
     whoBox(),
     h('h2', {class:'auth-h2', text:tree.mine.length ? 'Suas árvores' : 'Você ainda não participa de nenhuma árvore'}),
-    tree.mine.length ? list : h('p', {class:'auth-sub', text:'Crie uma árvore nova para a sua família, ou abra o link de convite que um parente te mandou.'}),
+    tree.mine.length ? list : h('p', {class:'auth-sub', text:'Se um parente te mandou um convite, digite o código abaixo. Ou crie uma árvore nova para a sua família.'}),
     pend.length ? h('div', {class:'auth-fine'}, ['Aguardando aprovação: ' + pend.map(function(r){ return r.nomeArvore || 'árvore'; }).join(', ')]) : null,
-    h('button', {class:'btn primary wide', type:'button', text:'+ Criar árvore nova', onclick:renderCreate})
+    inviteBox(msg),
+    h('div', {class:'auth-or'}, [h('span', {text:'ou'})]),
+    h('button', {class:'btn wide', type:'button', text:'+ Criar árvore nova', onclick:renderCreate})
   ]);
+}
+function inviteBox(msg){
+  var inp = h('input', {type:'text', id:'inviteCode', placeholder:'Código (ex.: ABC-123) ou link do convite', autocomplete:'off', autocapitalize:'characters', spellcheck:'false'});
+  var err = h('div', {class:'auth-err', role:'alert', hidden:!msg, text:msg || ''});
+  var btn = h('button', {class:'btn primary', type:'submit', text:'Entrar'});
+  var form = h('form', {class:'invite-box'}, [
+    h('label', {class:'lbl', for:'inviteCode', text:'Recebeu um convite?'}),
+    h('div', {class:'invite-row'}, [inp, btn]), err
+  ]);
+  form.addEventListener('submit', function(e){ e.preventDefault(); err.hidden = true; joinByCode(inp.value, err); });
+  return form;
 }
 
 /* ----- tela: criar árvore ----- */
@@ -3292,9 +3341,9 @@ function treeStartAction(){
 }
 
 /* ----- tela: pedir acesso a uma árvore (link de convite) ----- */
-function renderJoin(id){
+function renderJoin(id, nomeDado){
   lockApp(true);
-  var nomeArv = qs('nome');
+  var nomeArv = nomeDado || qs('nome');
   var sent = tree.myReqs.some(function(r){ return r.arvore === id; });
   var msg = h('textarea', {id:'reqMsg', placeholder:'Opcional: conte quem você é na família (ex.: filha da Desdete).', maxlength:'300'});
   authCard([whoBox(), h('h2', {class:'auth-h2', text:nomeArv ? 'Entrar na árvore "' + nomeArv + '"' : 'Entrar na árvore da família'})].concat(sent ? [
@@ -3333,7 +3382,10 @@ function openTree(id){
   if(fb.isAdmin){ $('tabMembros').hidden = false; watchMembers(); }
   // nome atualizado da árvore
   fb.unsub.push(fb.fs.collection('arvores').doc(id).onSnapshot(function(d){
-    if(!d.exists) return; var n = (d.data() || {}).nome; if(n && n !== tree.nome){ tree.nome = n; document.title = n; if(h1) h1.textContent = n; }
+    if(!d.exists) return; var dd = d.data() || {}, n = dd.nome;
+    var conv = dd.convite || '';
+    if(conv !== tree.convite){ tree.convite = conv; if(conv){ fb.fs.collection('convites').doc(conv).get().then(function(c){ tree.convitePapel = c.exists ? c.data().papel : ''; if(current === 'membros') renderMembers(); }, function(){}); } else { tree.convitePapel = ''; if(current === 'membros') renderMembers(); } }
+    if(n && n !== tree.nome){ tree.nome = n; document.title = n; if(h1) h1.textContent = n; }
   }, function(){}));
   attachDb(scopedDb(id), fb.role === 'leitor');
 }
@@ -3352,6 +3404,49 @@ function watchMembers(){
     membersState.membros = s.docs.map(function(d){ return d.data(); });
     if(current === 'membros') renderMembers();
   }, function(){}));
+}
+function setInvite(papel){
+  var old = tree.convite, code = newCode();
+  var batch = fb.fs.batch();
+  batch.set(fb.fs.collection('convites').doc(code), {arvore:tree.id, nomeArvore:tree.nome, papel:papel, criadoPor:fb.email, criadoEm:firebase.firestore.FieldValue.serverTimestamp()});
+  batch.update(fb.fs.collection('arvores').doc(tree.id), {convite:code});
+  if(old) batch.delete(fb.fs.collection('convites').doc(old));
+  return batch.commit().then(function(){ tree.convite = code; tree.convitePapel = papel; renderMembers(); toast('Código de convite: ' + fmtCode(code)); },
+    function(e){ toast('Não foi possível gerar o código (' + (e.code || 'erro') + '). Confira se as regras novas foram publicadas.'); });
+}
+function stopInvite(){
+  var old = tree.convite; if(!old) return;
+  var batch = fb.fs.batch();
+  batch.delete(fb.fs.collection('convites').doc(old));
+  batch.update(fb.fs.collection('arvores').doc(tree.id), {convite:''});
+  batch.commit().then(function(){ tree.convite = ''; tree.convitePapel = ''; renderMembers(); toast('Código desativado'); }, function(e){ toast('Não foi possível desativar (' + (e.code || 'erro') + ').'); });
+}
+var PAPEL_CONVITE = [['leitor', 'Entra direto como leitor (só vê)'], ['editor', 'Entra direto como editor (pode cadastrar)'], ['aprovacao', 'Pede acesso e eu aprovo']];
+function inviteCodePanel(){
+  var sel = h('select', {id:'invitePapel', 'aria-label':'O que acontece com quem usar o código'}, PAPEL_CONVITE.map(function(o){ return h('option', {value:o[0], text:o[1]}); }));
+  sel.value = tree.convitePapel || 'leitor';
+  var box = h('div', {class:'invite-admin'});
+  if(tree.convite){
+    var link = codeLink(tree.convite);
+    var msg = 'Montei a árvore genealógica "' + tree.nome + '"! Entre por este link: ' + link + '\nou abra o site e use o código ' + fmtCode(tree.convite);
+    box.appendChild(h('div', {class:'invite-code'}, [
+      h('span', {class:'lbl', text:'Código de convite'}),
+      h('b', {text:fmtCode(tree.convite)}),
+      h('small', {text:(PAPEL_CONVITE.filter(function(o){ return o[0] === tree.convitePapel; })[0] || ['', ''])[1]})
+    ]));
+    box.appendChild(h('div', {class:'actions'}, [
+      h('button', {class:'btn sm primary', type:'button', text:'Copiar convite', onclick:function(){ try{ navigator.clipboard.writeText(msg).then(function(){ toast('Convite copiado'); }, function(){ toast(fmtCode(tree.convite)); }); }catch(e){ toast(fmtCode(tree.convite)); } }}),
+      (function(){ var a = h('a', {class:'ct wa', href:'https://wa.me/?text=' + encodeURIComponent(msg), target:'_blank', rel:'noopener noreferrer'}); a.innerHTML = ICONS.wa; a.appendChild(h('span', {text:'Enviar no WhatsApp'})); return a; })(),
+      h('button', {class:'btn sm danger', type:'button', text:'Desativar código', onclick:stopInvite})
+    ]));
+    box.appendChild(h('div', {class:'member-add', style:'margin-top:10px;padding-top:10px'}, [h('span', {class:'muted', text:'Mudar regra:'}), sel,
+      h('button', {class:'btn sm', type:'button', text:'Gerar novo código', onclick:function(){ setInvite(sel.value); }})]));
+    box.appendChild(h('p', {class:'auth-fine', text:'Gerar um código novo desativa o anterior. Quem já entrou continua na árvore.'}));
+  } else {
+    box.appendChild(h('p', {class:'muted', style:'margin:12px 0 6px', text:'Crie um código para a família entrar sozinha: a pessoa digita o código na tela inicial ou abre o link do convite.'}));
+    box.appendChild(h('div', {class:'member-add', style:'margin-top:0;padding-top:0;border-top:0'}, [sel, h('button', {class:'btn sm primary', type:'button', text:'Criar código de convite', onclick:function(){ setInvite(sel.value); }})]));
+  }
+  return box;
 }
 function grant(email, papel, extra){
   email = email.toLowerCase();
@@ -3381,7 +3476,8 @@ function renderMembers(){
       membersState.membros.forEach(function(m){ batch.update(fb.fs.collection('acessos').doc(tree.id + '__' + m.email), {nomeArvore:n}); });
       batch.commit().then(function(){ tree.nome = n; toast('Árvore renomeada'); renderMembers(); }, function(e){ toast('Não foi possível renomear (' + (e.code || 'erro') + ').'); });
     }})]),
-    h('p', {class:'muted', style:'margin:12px 0 6px', text:'Mande este link para a família. Quem abrir entra com Google (ou e-mail) e pede acesso; você aprova aqui.'}),
+    inviteCodePanel(),
+    h('p', {class:'muted', style:'margin:16px 0 6px', text:'Link para pedir acesso (você aprova cada pessoa aqui):'}),
     h('div', {class:'member-add', style:'margin-top:0;padding-top:0;border-top:0'}, [linkIn, h('button', {class:'btn sm primary', type:'button', text:'Copiar link', onclick:function(){
       try{ navigator.clipboard.writeText(link).then(function(){ toast('Link copiado'); }, function(){ linkIn.select(); toast('Selecione e copie o link'); }); }catch(e){ linkIn.select(); }
     }}), (function(){ var a = h('a', {class:'ct wa', href:'https://wa.me/?text=' + encodeURIComponent('Montei a árvore genealógica da família! Entre por este link e peça acesso: ' + link), target:'_blank', rel:'noopener noreferrer'}); a.innerHTML = ICONS.wa; a.appendChild(h('span', {text:'Enviar no WhatsApp'})); return a; })()])
