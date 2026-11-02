@@ -455,6 +455,25 @@ body.auth-locked header.top, body.auth-locked main, body.auth-locked #banner{dis
 .auth-links{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .linkbtn{background:none;border:0;padding:0;color:var(--blue);font-size:.84rem;font-weight:600}
 .linkbtn:hover{text-decoration:underline}
+.auth-h2{font-size:1.15rem;margin-top:4px}
+.auth-card .lbl{font-size:.72rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--soft)}
+.btn.wide{width:100%;justify-content:center;padding:11px 14px}
+.auth-user .linkbtn{flex:none}
+.tree-list{display:grid;gap:8px}
+.tree-item{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--border);background:var(--card);border-radius:10px;padding:12px 14px;transition:border-color .15s,background .15s}
+.tree-item:hover{border-color:var(--leaf);background:var(--leaf-pale)}
+.tree-ico{font-size:1.4rem}
+.tree-txt{display:flex;flex-direction:column;flex:1;min-width:0}
+.tree-txt b{font-family:var(--font-display);color:var(--head)}
+.tree-txt small{color:var(--soft);font-size:.78rem}
+.tree-go{color:var(--soft);font-size:1.4rem}
+.tree-opts{display:grid;gap:6px}
+.tree-opt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer}
+.tree-opt:has(input:checked){border-color:var(--leaf);background:var(--leaf-pale)}
+.tree-opt input{margin-top:3px}
+.tree-opt span{display:flex;flex-direction:column}
+.tree-opt small{color:var(--soft);font-size:.8rem}
+.uc-tree{background:var(--leaf-pale);border:1px solid var(--leaf);color:var(--text);border-radius:20px;padding:3px 10px;font-weight:600;font-size:.8rem}
 .gbtn{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;padding:12px 16px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#1f1f1f;font-weight:600;font-size:1rem;box-shadow:0 1px 2px rgba(0,0,0,.06);transition:box-shadow .15s,border-color .15s}
 .gbtn:hover{border-color:#9aa3ad;box-shadow:0 4px 14px -6px rgba(0,0,0,.25)}
 .user-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);border-radius:24px;padding:3px 4px 3px 4px;background:var(--card)}
@@ -2313,9 +2332,10 @@ function attachDb(db, readOnly){
 function checkEmpty(){
   if(!shared.ready || !shared.serverFinal || Object.keys(P).length || shared.emptyShown) return;
   shared.emptyShown = true;
+  if(typeof treeStartAction === 'function' && tree.id && !shared.readOnly && treeStartAction()) return;
   if(shared.readOnly){ setBanner('A árvore compartilhada ainda está vazia.', 'info'); return; }
-  setBanner('A árvore compartilhada está vazia. Comece com os dados originais da família da Thaís ou importe um backup (.json) ou GEDCOM (.ged).', 'info', [
-    {label:'Carregar dados originais', primary:true, onclick:function(){ P = seedPeople(); P.sidney = {id:'sidney', nome:'Sidney', sexo:'M', pai:null, mae:null, conj:['thais'], notas:'', ni:false, nasc:'', falec:'', local:'', ord:9999}; normalize(); fixFam(); setBanner(''); afterChange('carregar dados originais'); }},
+  setBanner('Esta árvore ainda não tem pessoas. Cadastre a primeira com "+ Nova pessoa", use a família da Thaís como base ou importe um backup (.json) ou GEDCOM (.ged).', 'info', [
+    {label:'Usar a família da Thaís', primary:false, onclick:function(){ P = seedPeople(); P.sidney = {id:'sidney', nome:'Sidney', sexo:'M', pai:null, mae:null, conj:['thais'], notas:'', ni:false, nasc:'', falec:'', local:'', ord:9999}; normalize(); fixFam(); setBanner(''); afterChange('carregar dados originais'); }},
     {label:'Importar arquivo', onclick:function(){ $('fileImport').click(); }}
   ]);
 }
@@ -2978,8 +2998,6 @@ var FIREBASE_CONFIG = {
   appId: "1:985196474254:web:d25d7f6d2403faa868fedf",
   measurementId: "G-VR321L45NV"
 };
-// 2) E-mails que administram a árvore (aprovam quem pede acesso). Use o mesmo e-mail nas regras do Firestore.
-var ADMIN_EMAILS = ['smonthefor@gmail.com', 'bancointernost@gmail.com', 'smonthefor.totvs@gmail.com'];
 
 var fb = {app:null, auth:null, fs:null, user:null, email:'', role:null, isAdmin:false, unsub:[]};
 function firebaseConfigured(){ return typeof firebase !== 'undefined' && FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey.indexOf('COLE') !== 0; }
@@ -2992,7 +3010,7 @@ function authCard(children){
   box.appendChild(h('div', {class:'auth-card'}, [
     h('div', {class:'auth-mark', 'aria-hidden':'true'}, [h('span', {text:'🌿'})]),
     h('span', {class:'eyebrow', text:'Genealogia · Família'}),
-    h('h1', {text:'Árvore Genealógica de Thaís'})
+    h('h1', {text:'Árvore Genealógica'})
   ].concat(children)));
 }
 function googleButton(){
@@ -3015,7 +3033,7 @@ function renderAuth(state, info){
       h('p', {class:'auth-sub', text:'Esta versão usa login com Google e guarda a árvore no Firebase, mas ainda falta colar a configuração do seu projeto Firebase no arquivo.'}),
       h('ol', {class:'auth-steps'}, [
         h('li', {text:'Abra o arquivo num editor de texto e procure por FIREBASE_CONFIG.'}),
-        h('li', {text:'Cole a configuração do app Web do seu projeto e o seu e-mail em ADMIN_EMAILS.'}),
+        h('li', {text:'Cole a configuração do app Web do seu projeto.'}),
         h('li', {text:'Publique o arquivo (Firebase Hosting) ou teste em http://localhost.'})
       ]),
       h('div', {class:'auth-actions'}, [h('button', {class:'btn', type:'button', text:'Usar sem login, só neste navegador', onclick:function(){ lockApp(false); save(); renderAll(); }})])
@@ -3052,25 +3070,7 @@ function renderAuth(state, info){
       ])
     ]); return;
   }
-  if(state === 'pending'){
-    var u = fb.user, sent = info && info.sent;
-    var who = h('div', {class:'auth-user'}, [
-      u.photoURL ? h('img', {src:u.photoURL, alt:'', referrerpolicy:'no-referrer'}) : h('div', {class:'av', text:(u.displayName || u.email || '?')[0].toUpperCase()}),
-      h('div', {}, [h('b', {text:u.displayName || 'Conta Google'}), h('div', {class:'muted', text:u.email})])
-    ]);
-    var msg = h('textarea', {id:'reqMsg', placeholder:'Opcional: conte quem você é na família (ex.: filha da Desdete).', maxlength:'300'});
-    authCard([who].concat(sent ? [
-      h('div', {class:'auth-ok', text:'Pedido enviado! Assim que alguém da família aprovar, esta tela abre a árvore sozinha.'}),
-      h('div', {class:'auth-actions'}, [h('button', {class:'btn', type:'button', text:'Sair', onclick:signOut})])
-    ] : [
-      h('p', {class:'auth-sub', text:'Sua conta ainda não tem acesso à árvore. Peça acesso e quem administra a árvore vai aprovar.'}),
-      msg,
-      h('div', {class:'auth-actions'}, [
-        h('button', {class:'btn primary', type:'button', text:'Pedir acesso', onclick:function(){ requestAccess(msg.value); }}),
-        h('button', {class:'btn', type:'button', text:'Usar outra conta', onclick:signOut})
-      ])
-    ]));
-  }
+
 }
 function emailForm(info){
   var em = h('input', {type:'email', id:'lgEmail', placeholder:'seu e-mail', autocomplete:'email', required:true});
@@ -3135,13 +3135,6 @@ function signIn(){
   });
 }
 function signOut(){ fb.unsub.forEach(function(u){ try{ u(); }catch(e){} }); fb.auth.signOut().then(function(){ location.reload(); }); }
-function requestAccess(msg){
-  var u = fb.user;
-  fb.fs.collection('pedidos').doc(u.uid).set({
-    email:fb.email, nome:u.displayName || '', foto:u.photoURL || '', mensagem:(msg || '').trim().slice(0, 300),
-    pedidoEm:firebase.firestore.FieldValue.serverTimestamp()
-  }).then(function(){ renderAuth('pending', {sent:true}); }, function(e){ toast('Não foi possível enviar o pedido (' + (e.code || 'erro') + ').'); });
-}
 function startFirebase(){
   if(typeof firebase === 'undefined'){ renderAuth('nosdk'); return; }
   if(!firebaseConfigured()){ renderAuth('setup'); return; }
@@ -3160,69 +3153,241 @@ function startFirebase(){
     afterLogin(u);
   });
 }
-function afterLogin(u){
-    fb.user = u; fb.email = (u.email || '').toLowerCase();
-    fb.isAdmin = ADMIN_EMAILS.map(function(x){ return x.toLowerCase(); }).indexOf(fb.email) >= 0;
-    renderAuth('loading', 'Olá, ' + (u.displayName || fb.email).split(' ')[0] + '! Verificando seu acesso…');
-    var boot = fb.isAdmin
-      ? fb.fs.collection('membros').doc(fb.email).set({papel:'admin', nome:u.displayName || '', foto:u.photoURL || '', atualizadoEm:firebase.firestore.FieldValue.serverTimestamp()}, {merge:true}).catch(function(){})
-      : Promise.resolve();
-    boot.then(function(){
-      // acompanha o próprio cadastro de membro: aprovado entra na hora; removido sai
-      var entered = false;
-      var off = fb.fs.collection('membros').doc(fb.email).onSnapshot(function(doc){
-        if(doc.exists){
-          var papel = (doc.data() || {}).papel || 'leitor';
-          if(!entered){ entered = true; fb.role = papel; enterApp(); }
-          else if(papel !== fb.role){ location.reload(); }
-        } else if(entered){ location.reload(); }
-        else {
-          fb.fs.collection('pedidos').doc(u.uid).get().then(function(p){ renderAuth('pending', {sent:p.exists}); }, function(){ renderAuth('pending', {sent:false}); });
-        }
-      }, function(){ renderAuth('pending', {sent:false}); });
-      fb.unsub.push(off);
-    });
-}
-function enterApp(){
-  lockApp(false);
-  fb.isAdmin = fb.isAdmin || fb.role === 'admin';
-  var ro = fb.role === 'leitor';
-  // chip do usuário no topo
-  var chip = $('userChip'); chip.hidden = false; chip.innerHTML = '';
+/* ================= várias árvores ================= */
+// Estrutura no Firestore:
+//   arvores/{id}                 {nome, dono, criadoEm}
+//   arvores/{id}/pessoas/{p}     pessoas da árvore
+//   arvores/{id}/galeria/{g}     imagens
+//   acessos/{id}__{email}        quem pode abrir a árvore {arvore, email, papel, nome, foto, nomeArvore}
+//   pedidos/{id}__{uid}          pedidos de acesso {arvore, uid, email, nome, foto, mensagem, nomeArvore}
+var tree = {id:null, nome:'', mine:[], myReqs:[], gotMine:false, gotReqs:false};
+function qs(k){ var m = new RegExp('[?&]' + k + '=([^&#]*)').exec(location.search); return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : ''; }
+function goTree(id){ try{ localStorage.setItem('arvore-ultima-' + fb.email, id); }catch(e){} location.href = location.pathname + '?arvore=' + encodeURIComponent(id); }
+function goPicker(){ location.href = location.pathname + '?escolher=1'; }
+function inviteLink(id, nome){ return location.origin + location.pathname + '?arvore=' + encodeURIComponent(id) + (nome ? '&nome=' + encodeURIComponent(nome) : ''); }
+function papelNome(p){ return {admin:'Administrador', editor:'Editor', leitor:'Leitor'}[p] || p; }
+function scopedDb(id){ var base = fb.fs.collection('arvores').doc(id); return {collection:function(n){ return base.collection(n); }}; }
+
+function whoBox(){
   var u = fb.user;
-  chip.appendChild(u.photoURL ? h('img', {src:u.photoURL, alt:'', referrerpolicy:'no-referrer'}) : h('span', {class:'av sm', text:(u.displayName || fb.email)[0].toUpperCase()}));
-  chip.appendChild(h('span', {class:'uc-name', text:(u.displayName || fb.email).split(' ')[0]}));
-  chip.appendChild(h('span', {class:'uc-role', text:{admin:'Admin', editor:'Editor', leitor:'Leitor'}[fb.role] || fb.role}));
-  chip.appendChild(h('button', {class:'btn sm', type:'button', text:'Sair', onclick:signOut}));
-  if(fb.isAdmin){ $('tabMembros').hidden = false; watchMembers(); }
-  attachDb(fb.fs, ro, 'Firestore');
+  return h('div', {class:'auth-user'}, [
+    u.photoURL ? h('img', {src:u.photoURL, alt:'', referrerpolicy:'no-referrer'}) : h('div', {class:'av', text:(u.displayName || u.email || '?')[0].toUpperCase()}),
+    h('div', {style:'flex:1;min-width:0'}, [h('b', {text:u.displayName || 'Sua conta'}), h('div', {class:'muted', text:u.email})]),
+    h('button', {class:'linkbtn', type:'button', text:'Sair', onclick:signOut})
+  ]);
+}
+function afterLogin(u){
+  fb.user = u; fb.email = (u.email || '').toLowerCase();
+  renderAuth('loading', 'Olá, ' + (u.displayName || fb.email).split(' ')[0] + '! Buscando suas árvores…');
+  var wanted = qs('arvore'), entered = false;
+  function decide(){
+    if(entered || !tree.gotMine || !tree.gotReqs) return;
+    var mineIds = tree.mine.map(function(a){ return a.arvore; });
+    if(wanted){
+      if(mineIds.indexOf(wanted) >= 0){ entered = true; openTree(wanted); return; }
+      renderJoin(wanted); return;
+    }
+    if(!qs('escolher')){
+      var last = null; try{ last = localStorage.getItem('arvore-ultima-' + fb.email); }catch(e){}
+      if(last && mineIds.indexOf(last) >= 0){ entered = true; openTree(last); return; }
+      if(mineIds.length === 1){ entered = true; openTree(mineIds[0]); return; }
+    }
+    renderPicker();
+  }
+  // minhas árvores e meus pedidos, ao vivo: aprovação abre a árvore sozinha
+  fb.unsub.push(fb.fs.collection('acessos').where('email', '==', fb.email).onSnapshot(function(s){
+    var before = tree.mine.map(function(a){ return a.arvore + ':' + a.papel; }).join('|');
+    tree.mine = s.docs.map(function(d){ return d.data(); }).sort(function(a, b){ return (a.nomeArvore || '').localeCompare(b.nomeArvore || '', 'pt-BR'); });
+    tree.gotMine = true;
+    var after = tree.mine.map(function(a){ return a.arvore + ':' + a.papel; }).join('|');
+    if(entered && tree.id){
+      var me = tree.mine.filter(function(a){ return a.arvore === tree.id; })[0];
+      if(!me || me.papel !== fb.role){ toast('Seu acesso a esta árvore mudou. Recarregando…'); setTimeout(function(){ location.reload(); }, 1200); }
+      return;
+    }
+    if(before !== after || !entered) decide();
+  }, function(e){ renderAuth('login', 'Não consegui ler seus acessos (' + (e.code || 'erro') + '). Confira se as regras do Firestore foram publicadas.'); }));
+  fb.unsub.push(fb.fs.collection('pedidos').where('uid', '==', u.uid).onSnapshot(function(s){
+    tree.myReqs = s.docs.map(function(d){ return d.data(); }); tree.gotReqs = true;
+    if(!entered) decide();
+  }, function(){ tree.gotReqs = true; decide(); }));
 }
 
-/* ----- administração de membros ----- */
+/* ----- tela: minhas árvores ----- */
+function renderPicker(){
+  lockApp(true);
+  var list = h('div', {class:'tree-list'});
+  tree.mine.forEach(function(a){
+    list.appendChild(h('button', {class:'tree-item', type:'button', onclick:function(){ goTree(a.arvore); }}, [
+      h('span', {class:'tree-ico', 'aria-hidden':'true', text:'🌳'}),
+      h('span', {class:'tree-txt'}, [h('b', {text:a.nomeArvore || 'Árvore sem nome'}), h('small', {text:papelNome(a.papel)})]),
+      h('span', {class:'tree-go', 'aria-hidden':'true', text:'›'})
+    ]));
+  });
+  var pend = tree.myReqs.filter(function(r){ return !tree.mine.some(function(a){ return a.arvore === r.arvore; }); });
+  authCard([
+    whoBox(),
+    h('h2', {class:'auth-h2', text:tree.mine.length ? 'Suas árvores' : 'Você ainda não participa de nenhuma árvore'}),
+    tree.mine.length ? list : h('p', {class:'auth-sub', text:'Crie uma árvore nova para a sua família, ou abra o link de convite que um parente te mandou.'}),
+    pend.length ? h('div', {class:'auth-fine'}, ['Aguardando aprovação: ' + pend.map(function(r){ return r.nomeArvore || 'árvore'; }).join(', ')]) : null,
+    h('button', {class:'btn primary wide', type:'button', text:'+ Criar árvore nova', onclick:renderCreate})
+  ]);
+}
+
+/* ----- tela: criar árvore ----- */
+function renderCreate(){
+  lockApp(true);
+  var nome = h('input', {type:'text', id:'newTreeName', placeholder:'Ex.: Família Ribeiro Xavier', maxlength:'80'});
+  var opts = h('div', {class:'tree-opts'});
+  var choices = [
+    ['eu', 'Começar comigo', 'A árvore começa com você; depois é só ir adicionando pais, avós, filhos…'],
+    ['vazia', 'Começar em branco', 'Nenhuma pessoa cadastrada.'],
+    ['thais', 'Usar a família da Thaís como base', 'Copia as 98 pessoas da família de Thaís (Ribeiro Xavier e Gomes de Pinho).'],
+    ['importar', 'Importar um arquivo', 'Backup .json desta árvore ou GEDCOM (.ged) de outro site.']
+  ];
+  choices.forEach(function(c, i){
+    var r = h('input', {type:'radio', name:'newTreeStart', id:'nts_' + c[0], value:c[0]}); if(i === 0) r.checked = true;
+    opts.appendChild(h('label', {class:'tree-opt', for:'nts_' + c[0]}, [r, h('span', {}, [h('b', {text:c[1]}), h('small', {text:c[2]})])]));
+  });
+  var err = h('div', {class:'auth-err', role:'alert', hidden:true});
+  var go = h('button', {class:'btn primary', type:'button', text:'Criar árvore'});
+  go.addEventListener('click', function(){
+    var n = nome.value.trim();
+    if(!n){ err.hidden = false; err.textContent = 'Dê um nome para a árvore.'; nome.focus(); return; }
+    var start = (opts.querySelector('input:checked') || {}).value || 'eu';
+    go.disabled = true; go.textContent = 'Criando…';
+    var ref = fb.fs.collection('arvores').doc();
+    ref.set({nome:n, dono:fb.email, criadoEm:firebase.firestore.FieldValue.serverTimestamp()}).then(function(){
+      return fb.fs.collection('acessos').doc(ref.id + '__' + fb.email).set({
+        arvore:ref.id, email:fb.email, papel:'admin', nome:fb.user.displayName || '', foto:fb.user.photoURL || '', nomeArvore:n,
+        criadoEm:firebase.firestore.FieldValue.serverTimestamp()});
+    }).then(function(){
+      try{ sessionStorage.setItem('arvore-inicio-' + ref.id, start); }catch(e){}
+      goTree(ref.id);
+    }, function(e){ go.disabled = false; go.textContent = 'Criar árvore'; err.hidden = false; err.textContent = 'Não foi possível criar a árvore (' + (e.code || 'erro') + '). Confira se as regras novas do Firestore foram publicadas.'; });
+  });
+  authCard([
+    whoBox(),
+    h('h2', {class:'auth-h2', text:'Criar árvore nova'}),
+    h('div', {class:'auth-form'}, [h('label', {class:'lbl', for:'newTreeName', text:'Nome da árvore'}), nome]),
+    h('div', {class:'lbl', text:'Como começar'}), opts, err,
+    h('div', {class:'auth-actions'}, [go, tree.mine.length ? h('button', {class:'btn', type:'button', text:'Voltar', onclick:renderPicker}) : null]),
+    h('p', {class:'auth-fine', text:'Você será o administrador: convida a família, aprova pedidos e define quem pode editar.'})
+  ]);
+  setTimeout(function(){ nome.focus(); }, 30);
+}
+// executa a escolha de início quando a árvore nova abre vazia
+function treeStartAction(){
+  var a = null; try{ a = sessionStorage.getItem('arvore-inicio-' + tree.id); sessionStorage.removeItem('arvore-inicio-' + tree.id); }catch(e){}
+  if(!a || Object.keys(P).length) return false;
+  if(a === 'thais'){ P = seedPeople(); P.sidney = {id:'sidney', nome:'Sidney', sexo:'M', pai:null, mae:null, conj:['thais'], notas:'', ni:false, nasc:'', falec:'', local:'', ord:9999}; normalize(); fixFam(); focusId = 'thais'; afterChange('começar com a família da Thaís'); return true; }
+  if(a === 'eu'){
+    var nome = (fb.user.displayName || fb.email.split('@')[0]).trim();
+    var id = newId(nome); P[id] = {id:id, nome:nome, sexo:'', pai:null, mae:null, conj:[], notas:'', ni:false, nasc:'', falec:'', local:'', ord:0};
+    normalize(); fixFam(); focusId = id; famHome = id; famStart = id; setMe(id);
+    afterChange('começar a árvore'); showView('perfil'); toast('Árvore criada! Complete seu perfil e depois adicione sua família.'); return true;
+  }
+  if(a === 'importar'){ setBanner('Árvore criada. Escolha o arquivo para importar.', 'info', [{label:'Escolher arquivo', primary:true, onclick:function(){ $('fileImport').click(); }}]); return true; }
+  setBanner('Árvore criada em branco. Use "+ Nova pessoa" para cadastrar a primeira pessoa.', 'info'); return true;
+}
+
+/* ----- tela: pedir acesso a uma árvore (link de convite) ----- */
+function renderJoin(id){
+  lockApp(true);
+  var nomeArv = qs('nome');
+  var sent = tree.myReqs.some(function(r){ return r.arvore === id; });
+  var msg = h('textarea', {id:'reqMsg', placeholder:'Opcional: conte quem você é na família (ex.: filha da Desdete).', maxlength:'300'});
+  authCard([whoBox(), h('h2', {class:'auth-h2', text:nomeArv ? 'Entrar na árvore "' + nomeArv + '"' : 'Entrar na árvore da família'})].concat(sent ? [
+    h('div', {class:'auth-ok', text:'Pedido enviado! Assim que quem administra a árvore aprovar, ela abre aqui sozinha.'}),
+    h('div', {class:'auth-actions'}, [h('button', {class:'btn', type:'button', text:'Ver minhas árvores', onclick:goPicker})])
+  ] : [
+    h('p', {class:'auth-sub', text:'Você ainda não tem acesso a esta árvore. Peça acesso e quem administra vai aprovar.'}),
+    msg,
+    h('div', {class:'auth-actions'}, [
+      h('button', {class:'btn primary', type:'button', text:'Pedir acesso', onclick:function(){
+        var u = fb.user;
+        fb.fs.collection('pedidos').doc(id + '__' + u.uid).set({arvore:id, uid:u.uid, email:fb.email, nome:u.displayName || '', foto:u.photoURL || '',
+          mensagem:(msg.value || '').trim().slice(0, 300), nomeArvore:nomeArv || '', pedidoEm:firebase.firestore.FieldValue.serverTimestamp()})
+          .then(function(){ toast('Pedido enviado'); }, function(e){ toast('Não foi possível enviar o pedido (' + (e.code || 'erro') + ').'); });
+      }}),
+      h('button', {class:'btn', type:'button', text:'Ver minhas árvores', onclick:goPicker})
+    ])
+  ]));
+}
+
+/* ----- dentro da árvore ----- */
+function openTree(id){
+  var acc = tree.mine.filter(function(a){ return a.arvore === id; })[0];
+  tree.id = id; tree.nome = acc.nomeArvore || 'Árvore'; fb.role = acc.papel; fb.isAdmin = acc.papel === 'admin';
+  try{ localStorage.setItem('arvore-ultima-' + fb.email, id); }catch(e){}
+  if(!qs('arvore')) try{ history.replaceState(null, '', location.pathname + '?arvore=' + encodeURIComponent(id)); }catch(e){}
+  lockApp(false);
+  document.title = tree.nome;
+  var h1 = document.querySelector('header.top h1'); if(h1) h1.textContent = tree.nome;
+  var u = fb.user, chip = $('userChip'); chip.hidden = false; chip.innerHTML = '';
+  chip.appendChild(h('button', {class:'uc-tree', type:'button', title:'Trocar de árvore ou criar outra', onclick:goPicker}, [h('span', {'aria-hidden':'true', text:'🌳 '}), 'Árvores']));
+  chip.appendChild(u.photoURL ? h('img', {src:u.photoURL, alt:'', referrerpolicy:'no-referrer'}) : h('span', {class:'av sm', text:(u.displayName || fb.email)[0].toUpperCase()}));
+  chip.appendChild(h('span', {class:'uc-name', text:(u.displayName || fb.email).split(' ')[0]}));
+  chip.appendChild(h('span', {class:'uc-role', text:papelNome(fb.role)}));
+  chip.appendChild(h('button', {class:'btn sm', type:'button', text:'Sair', onclick:signOut}));
+  if(fb.isAdmin){ $('tabMembros').hidden = false; watchMembers(); }
+  // nome atualizado da árvore
+  fb.unsub.push(fb.fs.collection('arvores').doc(id).onSnapshot(function(d){
+    if(!d.exists) return; var n = (d.data() || {}).nome; if(n && n !== tree.nome){ tree.nome = n; document.title = n; if(h1) h1.textContent = n; }
+  }, function(){}));
+  attachDb(scopedDb(id), fb.role === 'leitor');
+}
+
+/* ----- membros da árvore (administrador) ----- */
 var membersState = {pedidos:[], membros:[]};
 function watchMembers(){
-  fb.unsub.push(fb.fs.collection('pedidos').onSnapshot(function(s){
-    membersState.pedidos = s.docs.map(function(d){ return Object.assign({uid:d.id}, d.data()); });
+  fb.unsub.push(fb.fs.collection('pedidos').where('arvore', '==', tree.id).onSnapshot(function(s){
+    var n0 = membersState.pedidos.length;
+    membersState.pedidos = s.docs.map(function(d){ return Object.assign({pid:d.id}, d.data()); });
     var b = $('membersBadge'); b.hidden = !membersState.pedidos.length; b.textContent = membersState.pedidos.length;
     if(current === 'membros') renderMembers();
-    if(membersState.pedidos.length && current !== 'membros') toast(membersState.pedidos.length + ' pedido(s) de acesso aguardando aprovação');
+    if(membersState.pedidos.length > n0 && current !== 'membros') toast(membersState.pedidos.length + ' pedido(s) de acesso aguardando aprovação');
   }, function(){}));
-  fb.unsub.push(fb.fs.collection('membros').onSnapshot(function(s){
-    membersState.membros = s.docs.map(function(d){ return Object.assign({email:d.id}, d.data()); });
+  fb.unsub.push(fb.fs.collection('acessos').where('arvore', '==', tree.id).onSnapshot(function(s){
+    membersState.membros = s.docs.map(function(d){ return d.data(); });
     if(current === 'membros') renderMembers();
   }, function(){}));
 }
+function grant(email, papel, extra){
+  email = email.toLowerCase();
+  return fb.fs.collection('acessos').doc(tree.id + '__' + email).set(Object.assign({arvore:tree.id, email:email, papel:papel, nomeArvore:tree.nome,
+    aprovadoPor:fb.email, aprovadoEm:firebase.firestore.FieldValue.serverTimestamp()}, extra || {}), {merge:true});
+}
 function approve(req, papel){
-  var batch = fb.fs.batch();
-  batch.set(fb.fs.collection('membros').doc(req.email.toLowerCase()), {papel:papel, nome:req.nome || '', foto:req.foto || '', aprovadoPor:fb.email, aprovadoEm:firebase.firestore.FieldValue.serverTimestamp()}, {merge:true});
-  batch.delete(fb.fs.collection('pedidos').doc(req.uid));
-  batch.commit().then(function(){ toast((req.nome || req.email) + ' agora tem acesso como ' + papel); }, function(e){ toast('Não foi possível aprovar (' + (e.code || 'erro') + ').'); });
+  grant(req.email, papel, {nome:req.nome || '', foto:req.foto || ''})
+    .then(function(){ return fb.fs.collection('pedidos').doc(req.pid).delete(); })
+    .then(function(){ toast((req.nome || req.email) + ' agora tem acesso como ' + papelNome(papel).toLowerCase()); }, function(e){ toast('Não foi possível aprovar (' + (e.code || 'erro') + ').'); });
 }
 function renderMembers(){
   var box = $('membersBox'); if(!box) return; box.innerHTML = '';
   if(!fb.isAdmin){ box.appendChild(h('div', {class:'panel muted', text:'Só administradores veem esta tela.'})); return; }
-  box.appendChild(h('div', {class:'list-head'}, [h('div', {}, [h('h2', {text:'Quem tem acesso'}), h('p', {class:'muted', style:'margin:4px 0 0', text:'Editores cadastram e alteram pessoas. Leitores só veem a árvore, sem contatos nem datas completas de pessoas vivas.'})])]));
-  var reqs = h('section', {class:'panel'}, [h('h3', {text:'Pedidos de acesso (' + membersState.pedidos.length + ')'})]);
+  box.appendChild(h('div', {class:'list-head'}, [h('div', {}, [h('h2', {text:'Quem tem acesso a esta árvore'}), h('p', {class:'muted', style:'margin:4px 0 0', text:'Editores cadastram e alteram pessoas. Leitores só veem a árvore, sem contatos nem datas completas de pessoas vivas.'})])]));
+
+  // nome e convite
+  var nameIn = h('input', {type:'text', id:'treeNameEdit', value:tree.nome, maxlength:'80', 'aria-label':'Nome da árvore'});
+  var link = inviteLink(tree.id, tree.nome);
+  var linkIn = h('input', {type:'text', id:'inviteLink', value:link, readonly:true, 'aria-label':'Link de convite'});
+  box.appendChild(h('section', {class:'panel'}, [
+    h('h3', {text:'Nome e convite'}),
+    h('div', {class:'member-add', style:'margin-top:0;padding-top:0;border-top:0'}, [nameIn, h('button', {class:'btn sm', type:'button', text:'Renomear', onclick:function(){
+      var n = nameIn.value.trim(); if(!n || n === tree.nome) return;
+      var batch = fb.fs.batch();
+      batch.update(fb.fs.collection('arvores').doc(tree.id), {nome:n});
+      membersState.membros.forEach(function(m){ batch.update(fb.fs.collection('acessos').doc(tree.id + '__' + m.email), {nomeArvore:n}); });
+      batch.commit().then(function(){ tree.nome = n; toast('Árvore renomeada'); renderMembers(); }, function(e){ toast('Não foi possível renomear (' + (e.code || 'erro') + ').'); });
+    }})]),
+    h('p', {class:'muted', style:'margin:12px 0 6px', text:'Mande este link para a família. Quem abrir entra com Google (ou e-mail) e pede acesso; você aprova aqui.'}),
+    h('div', {class:'member-add', style:'margin-top:0;padding-top:0;border-top:0'}, [linkIn, h('button', {class:'btn sm primary', type:'button', text:'Copiar link', onclick:function(){
+      try{ navigator.clipboard.writeText(link).then(function(){ toast('Link copiado'); }, function(){ linkIn.select(); toast('Selecione e copie o link'); }); }catch(e){ linkIn.select(); }
+    }}), (function(){ var a = h('a', {class:'ct wa', href:'https://wa.me/?text=' + encodeURIComponent('Montei a árvore genealógica da família! Entre por este link e peça acesso: ' + link), target:'_blank', rel:'noopener noreferrer'}); a.innerHTML = ICONS.wa; a.appendChild(h('span', {text:'Enviar no WhatsApp'})); return a; })()])
+  ]));
+
+  var reqs = h('section', {class:'panel', style:'margin-top:16px'}, [h('h3', {text:'Pedidos de acesso (' + membersState.pedidos.length + ')'})]);
   if(!membersState.pedidos.length) reqs.appendChild(h('div', {class:'muted', text:'Nenhum pedido aguardando.'}));
   membersState.pedidos.forEach(function(r){
     reqs.appendChild(h('div', {class:'member'}, [
@@ -3231,7 +3396,7 @@ function renderMembers(){
       h('div', {class:'actions'}, [
         h('button', {class:'btn sm primary', type:'button', text:'Aprovar como editor', onclick:function(){ approve(r, 'editor'); }}),
         h('button', {class:'btn sm', type:'button', text:'Só leitura', onclick:function(){ approve(r, 'leitor'); }}),
-        h('button', {class:'btn sm danger', type:'button', text:'Recusar', onclick:function(){ fb.fs.collection('pedidos').doc(r.uid).delete().then(function(){ toast('Pedido recusado'); }); }})
+        h('button', {class:'btn sm danger', type:'button', text:'Recusar', onclick:function(){ fb.fs.collection('pedidos').doc(r.pid).delete().then(function(){ toast('Pedido recusado'); }); }})
       ])
     ]));
   });
@@ -3240,25 +3405,24 @@ function renderMembers(){
   var mem = h('section', {class:'panel', style:'margin-top:16px'}, [h('h3', {text:'Membros (' + membersState.membros.length + ')'})]);
   membersState.membros.slice().sort(function(a, b){ return (a.nome || a.email).localeCompare(b.nome || b.email, 'pt-BR'); }).forEach(function(m){
     var self = m.email === fb.email;
-    var sel = h('select', {id:'role_' + m.email, 'aria-label':'Papel de ' + (m.nome || m.email)}, [['admin','Admin'],['editor','Editor'],['leitor','Leitor']].map(function(o){ return h('option', {value:o[0], text:o[1]}); }));
+    var sel = h('select', {id:'role_' + m.email, 'aria-label':'Papel de ' + (m.nome || m.email)}, [['admin','Administrador'],['editor','Editor'],['leitor','Leitor']].map(function(o){ return h('option', {value:o[0], text:o[1]}); }));
     sel.value = m.papel || 'leitor'; sel.disabled = self;
-    sel.addEventListener('change', function(){ fb.fs.collection('membros').doc(m.email).set({papel:sel.value}, {merge:true}).then(function(){ toast('Papel atualizado'); }, function(e){ toast('Não foi possível alterar (' + (e.code || 'erro') + ').'); }); });
+    sel.addEventListener('change', function(){ fb.fs.collection('acessos').doc(tree.id + '__' + m.email).update({papel:sel.value}).then(function(){ toast('Papel atualizado'); }, function(e){ toast('Não foi possível alterar (' + (e.code || 'erro') + ').'); }); });
     mem.appendChild(h('div', {class:'member'}, [
       m.foto ? h('img', {src:m.foto, alt:'', referrerpolicy:'no-referrer'}) : h('span', {class:'av sm', text:(m.nome || m.email)[0].toUpperCase()}),
       h('div', {class:'m-info'}, [h('b', {text:(m.nome || m.email) + (self ? ' (você)' : '')}), h('div', {class:'muted', text:m.email})]),
       h('div', {class:'actions'}, [sel, self ? null : h('button', {class:'btn sm danger', type:'button', text:'Remover', onclick:function(){
-        dialog({title:'Remover acesso', sub:(m.nome || m.email) + ' não vai mais conseguir abrir a árvore.', actions:[{label:'Remover', danger:true, onclick:function(){ fb.fs.collection('membros').doc(m.email).delete().then(function(){ toast('Acesso removido'); }); }}]});
+        dialog({title:'Remover acesso', sub:(m.nome || m.email) + ' não vai mais conseguir abrir esta árvore.', actions:[{label:'Remover', danger:true, onclick:function(){ fb.fs.collection('acessos').doc(tree.id + '__' + m.email).delete().then(function(){ toast('Acesso removido'); }); }}]});
       }})])
     ]));
   });
   var addIn = h('input', {type:'email', id:'addMemberEmail', placeholder:'email@gmail.com', 'aria-label':'E-mail do novo membro'});
-  var addRole = h('select', {id:'addMemberRole', 'aria-label':'Papel'}, [h('option', {value:'editor', text:'Editor'}), h('option', {value:'leitor', text:'Leitor'})]);
-  mem.appendChild(h('div', {class:'member-add'}, [h('span', {class:'muted', text:'Liberar direto pelo e-mail Google:'}), addIn, addRole,
+  var addRole = h('select', {id:'addMemberRole', 'aria-label':'Papel'}, [h('option', {value:'editor', text:'Editor'}), h('option', {value:'leitor', text:'Leitor'}), h('option', {value:'admin', text:'Administrador'})]);
+  mem.appendChild(h('div', {class:'member-add'}, [h('span', {class:'muted', text:'Liberar direto pelo e-mail:'}), addIn, addRole,
     h('button', {class:'btn sm primary', type:'button', text:'Liberar', onclick:function(){
       var em = addIn.value.trim().toLowerCase();
       if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)){ toast('Digite um e-mail válido.'); return; }
-      fb.fs.collection('membros').doc(em).set({papel:addRole.value, nome:'', aprovadoPor:fb.email, aprovadoEm:firebase.firestore.FieldValue.serverTimestamp()}, {merge:true})
-        .then(function(){ addIn.value = ''; toast(em + ' liberado(a)'); }, function(e){ toast('Não foi possível liberar (' + (e.code || 'erro') + ').'); });
+      grant(em, addRole.value, {nome:''}).then(function(){ addIn.value = ''; toast(em + ' liberado(a)'); }, function(e){ toast('Não foi possível liberar (' + (e.code || 'erro') + ').'); });
     }})]));
   box.appendChild(mem);
 }
