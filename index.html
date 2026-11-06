@@ -188,10 +188,11 @@ main{padding-block:26px 70px}
 .dt-sp .chip{background:var(--card)}
 .dt-gen{font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--teal);margin-left:4px}
 .ped-scroll{overflow-x:auto;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:22px 18px 26px}
-.pedigree{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));row-gap:38px;column-gap:10px;min-width:900px}
+.pedigree{display:grid;grid-template-columns:repeat(16,minmax(0,1fr));row-gap:38px;column-gap:10px;min-width:900px}
+.pedigree.g4{min-width:1900px}
 .gen-label{grid-column:1/-1;font-size:.66rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--soft);margin-bottom:-28px}
 .couple{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.couple.s2{grid-column:span 2}.couple.s4{grid-column:span 4}.couple.s8{grid-column:span 8}
+.couple.s1{grid-column:span 2}.couple.s2{grid-column:span 4}.couple.s4{grid-column:span 8}.couple.s8{grid-column:span 16}
 .couple.s8{max-width:520px;justify-self:center;width:100%}
 .couple.has-child::before{content:"";position:absolute;left:25%;right:25%;bottom:-12px;height:2px;background:var(--line)}
 .couple.has-child::after{content:"";position:absolute;left:50%;bottom:-38px;width:2px;height:26px;background:var(--line);transform:translateX(-1px)}
@@ -300,7 +301,7 @@ ol.path b{color:var(--head)}
 .mfoot{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;margin-top:16px}
 .mfoot .right{display:flex;gap:8px;margin-left:auto}
 
-.toast{position:fixed;left:50%;bottom:max(20px, env(safe-area-inset-bottom, 0px));transform:translateX(-50%) translateY(20px);background:var(--head);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:.88rem;font-weight:600;opacity:0;transition:opacity .2s,transform .2s;z-index:60;pointer-events:none}
+.toast{position:fixed;left:50%;bottom:max(20px, env(safe-area-inset-bottom, 0px));transform:translateX(-50%) translateY(20px);background:var(--head);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:.88rem;font-weight:600;opacity:0;transition:opacity .2s,transform .2s;z-index:200;pointer-events:none}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 
 /* ---------- famílias (grupos familiares) ---------- */
@@ -647,13 +648,12 @@ body.read-only .fg-person.vazio, body.read-only button.empty-slot, body.read-onl
   .fam-tools{width:100%}
   .fam-tools .fld{flex:1 1 100%}
   .fam-tools select{width:100%}
-  .modal{max-height:calc(100dvh - 24px)}
   .menu{position:fixed;left:8px;right:8px;top:auto;bottom:calc(8px + env(safe-area-inset-bottom, 0px));width:auto;max-width:none;max-height:75vh;overflow:auto;z-index:80;box-shadow:0 -8px 30px rgba(0,0,0,.25)}
 }
 /* tela estreita: a árvore vira uma coluna (um casal por linha), sem cortar nem rolar para o lado */
 @media (max-width:720px){
   .ped-scroll{overflow-x:visible;padding:14px 12px 16px}
-  .pedigree,.pedigree.g1,.pedigree.g2,.pedigree.g3{min-width:0;grid-template-columns:minmax(0,1fr);row-gap:10px}
+  .pedigree,.pedigree.g1,.pedigree.g2,.pedigree.g3,.pedigree.g4{min-width:0;grid-template-columns:minmax(0,1fr);row-gap:10px}
   .pedigree .couple{grid-column:1/-1!important;max-width:none}
   .pedigree .couple::before,.pedigree .couple::after,.pedigree .couple .slot::after{display:none!important}
   .pedigree .gen-label{margin:8px 0 -2px}
@@ -1044,7 +1044,9 @@ function ageText(p, curto){
 function years(p, semIdade){
   if(!p.nasc && !p.falec) return '';
   var nz = p.nasc && hidePrivate(p) ? yearOnly(p.nasc) : p.nasc;
-  var base = (nz || '?') + (p.falec ? ' – ' + p.falec : '');
+  var fz = p.falec && p.falec.trim() !== '?' ? p.falec : '';
+  if(!nz && !fz) return g(p, 'Falecido', 'Falecida', 'Falecido(a)');           // faleceu, sem datas
+  var base = nz ? nz + (p.falec ? ' – ' + (fz || '?') : '') : '? – ' + fz;
   var a = semIdade ? '' : ageText(p, true);
   return a ? base + ' · ' + a : base;
 }
@@ -1319,8 +1321,20 @@ function renderPedigree(){
   var bis = []; avos.forEach(function(a){ bis.push(a && get(a.pai), a && get(a.mae)); });
   var roleAvo = ['Avô paterno','Avó paterna','Avô materno','Avó materna'];
 
+  if(bis.some(Boolean)){
+    gens = 3;
+    var tris = []; bis.forEach(function(b){ tris.push(b && get(b.pai), b && get(b.mae)); });
+    ped.appendChild(h('div', {class:'gen-label', text:'Trisavós'}));
+    for(var t = 0; t < 8; t++){
+      var bc = bis[t];
+      ped.appendChild(h('div', {class:'couple s1' + (bc ? ' has-child' : '')}, [
+        slot(tris[2*t], 'Trisavô', bc && bc.id, 'pai', true),
+        slot(tris[2*t+1], 'Trisavó', bc && bc.id, 'mae', true)
+      ]));
+    }
+  }
   if(avos.some(Boolean)){
-    gens = 2;
+    gens = Math.max(gens, 2);
     ped.appendChild(h('div', {class:'gen-label', text:'Bisavós'}));
     for(var i = 0; i < 4; i++){
       var child = avos[i];
@@ -2995,6 +3009,8 @@ function makePoster(id){
   var root = P[id]; if(!root){ toast('Escolha uma pessoa na árvore primeiro.'); return; }
   toast('Montando o pôster…');
   var GENS = 4, W = 2600, H = 1700, top = 210, bottom = 90, left = 70, boxW = 540, boxH = 128;
+  (function(){ var b = []; [get(root.pai), get(root.mae)].forEach(function(pp){ [pp && get(pp.pai), pp && get(pp.mae)].forEach(function(a){ b.push(a && get(a.pai), a && get(a.mae)); }); });
+    if(b.some(function(z){ return z && (z.pai || z.mae); })){ GENS = 5; W = 3300; H = top + bottom + 16 * 142; } })();
   // irmãos: os mais velhos acima de quem está em foco, os mais novos abaixo
   var sibs = [], sibH = 112, sibGap = 16;   // pôster mostra só os ancestrais (irmãos ficaram de fora a pedido)
   var rb = birthYear(root);
@@ -3023,7 +3039,7 @@ function makePoster(id){
     x.fillStyle = '#0e7c72'; x.font = '700 26px "Source Sans 3", Arial, sans-serif'; x.fillText('GENEALOGIA · ANCESTRAIS', left, 78);
     x.fillStyle = '#0b3d5c'; x.font = '700 64px Merriweather, Georgia, serif'; x.fillText('Árvore de ' + displayName(root), left, 150);
     x.fillStyle = '#6b7684'; x.font = '400 26px "Source Sans 3", Arial, sans-serif';
-    var gl = [sibs.length ? 'Em foco e irmãos' : 'Em foco', 'Pais', 'Avós', 'Bisavós'];
+    var gl = [sibs.length ? 'Em foco e irmãos' : 'Em foco', 'Pais', 'Avós', 'Bisavós', 'Trisavós'];
     for(var gg = 0; gg < GENS; gg++){ x.fillText(gl[gg].toUpperCase(), left + gg * (boxW + colGap), top - 18); }
     // linhas
     x.strokeStyle = '#c3ced9'; x.lineWidth = 3;
@@ -3051,6 +3067,11 @@ function makePoster(id){
       if(imgs[p.id] && imgs[p.id].naturalWidth){ x.save(); x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.clip(); x.drawImage(imgs[p.id], cx - r, cy - r, r * 2, r * 2); x.restore(); }
       else { x.fillStyle = ring; x.font = '700 ' + Math.round(38 * k) + 'px Merriweather, Georgia, serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(initial(p), cx, cy + 2); x.textAlign = 'left'; x.textBaseline = 'alphabetic'; }
       x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.lineWidth = 4; x.strokeStyle = ring; x.stroke();
+      if(p.falec && String(p.falec).trim()){   // falecido(a): cruzinha no canto da foto
+        var bx = cx + r * 0.72, by = cy + r * 0.72, br = 13 * k + 3;
+        x.beginPath(); x.arc(bx, by, br, 0, Math.PI * 2); x.fillStyle = '#ffffff'; x.fill(); x.lineWidth = 2; x.strokeStyle = '#c3ced9'; x.stroke();
+        x.fillStyle = '#2c333b'; x.font = '700 ' + Math.round(17 * k + 3) + 'px Arial, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('✝', bx, by + 1); x.textAlign = 'left'; x.textBaseline = 'alphabetic';
+      }
       var tx = q.x + 128 * k, tw = boxW - 150 * k, lh = 36 * k;
       var lines = wrap(displayName(p), tw, '700 ' + Math.round(30 * k) + 'px Merriweather, Georgia, serif');
       var yr0 = years(p), blockH = lines.length * lh + (yr0 ? 30 * k : 0);
