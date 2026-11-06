@@ -387,6 +387,27 @@ ol.path b{color:var(--head)}
 .age-out.warn{color:var(--danger);background:var(--danger-pale);border-color:transparent}
 /* topo: menu, desfazer, avisos */
 .menu-wrap{position:relative}
+.slot.has-exp{position:relative}
+.exp-btn{position:absolute;top:-9px;right:-7px;z-index:2;min-width:22px;height:22px;padding:0 6px;border-radius:11px;border:1px dashed var(--line);background:var(--card);color:var(--soft);font-weight:700;font-size:.8rem;line-height:1;display:inline-flex;align-items:center;gap:3px;cursor:pointer;box-shadow:var(--shadow)}
+.exp-btn.has{border:1px solid var(--blue);color:var(--blue);background:var(--blue-pale)}
+.exp-btn.on{border:1px solid var(--leaf);color:var(--leaf);background:var(--leaf-pale)}
+.exp-btn .exp-n{font-size:.66rem;font-weight:700}
+.exp-btn:hover{transform:scale(1.08)}
+.ped-gap{visibility:hidden}
+.couple.ped-gap::before,.couple.ped-gap::after{display:none}
+@media (max-width:720px){ .ped-gap{display:none} }
+
+.pan-wrap{position:relative}
+.pan-area{cursor:grab}
+.pan-area.panning{cursor:grabbing;user-select:none}
+.pan-area.panning *{pointer-events:none}
+.full-scroll.pan-area{overflow:auto;max-height:78vh}
+.pz-ctrl{position:absolute;bottom:8px;right:8px;z-index:5;display:flex;gap:2px;padding:3px;border-radius:9px;background:var(--card);border:1px solid var(--border);box-shadow:var(--shadow)}
+.pz-btn{min-width:30px;height:28px;border:0;border-radius:6px;background:transparent;color:var(--text);font-weight:700;font-size:1rem;cursor:pointer}
+.pz-btn:hover{background:var(--blue-pale)}
+.pz-lbl{font-size:.72rem;min-width:44px;color:var(--soft)}
+@media (max-width:720px){ .pz-ctrl{display:none} .pan-area{cursor:auto} }
+
 .pf-view{position:relative}
 .pf-edit-top{position:absolute;top:18px;right:20px}
 .pf-view input:disabled,.pf-view select:disabled,.pf-view textarea:disabled{opacity:1;color:var(--text);cursor:default;-webkit-text-fill-color:var(--text)}
@@ -1280,9 +1301,10 @@ function renderFull(f){
   var ancTree = anc(f, 0, null);
   var gl = stat.g ? stat.n + (stat.n === 1 ? ' pessoa' : ' pessoas') + ' em ' + stat.g + (stat.g === 1 ? ' geração' : ' gerações') : 'nenhum ancestral cadastrado';
   box.appendChild(h('section', {class:'full-sec'}, [
-    h('div', {class:'full-sec-head'}, [h('h2', {text:'Ancestrais de ' + displayName(f)}), h('span', {class:'muted', text:gl + ' · role para o lado para ver tudo'})]),
-    h('div', {class:'full-scroll'}, [ancTree])
+    h('div', {class:'full-sec-head'}, [h('h2', {text:'Ancestrais de ' + displayName(f)}), h('span', {class:'muted', text:gl + ' · arraste para mover · − / + para aproximar'})]),
+    h('div', {class:'full-scroll', id:'ancScroll'}, [ancTree])
   ]));
+  requestAnimationFrame(function(){ var as = $('ancScroll'); if(as){ panZoom(as, 'completa'); as._pz.center(); } });
 
   // ---------- descendentes ----------
   var dstat = {n:0, g:0}, dseen = {};
@@ -1320,7 +1342,72 @@ function renderFull(f){
     h('div', {class:'full-scroll'}, [dtree])
   ]));
 }
-function centerPed(){ var sc = $('pedScroll'); if(!sc) return; requestAnimationFrame(function(){ sc.scrollLeft = Math.max(0, (sc.scrollWidth - sc.clientWidth) / 2); }); }
+/* ---------- mover e aproximar a árvore: arrastar com o mouse, botões − / + ---------- */
+function panZoom(sc, key, content){
+  if(!sc || sc._pz) { if(sc && sc._pz) sc._pz.apply(); return; }
+  var z = 1; try{ z = parseFloat(localStorage.getItem('arvore-zoom-' + key)) || 1; }catch(e){}
+  var wrap = document.createElement('div'); wrap.className = 'pan-wrap';
+  sc.parentNode.insertBefore(wrap, sc); wrap.appendChild(sc);
+  sc.classList.add('pan-area');
+  var lbl = h('button', {class:'pz-btn pz-lbl', type:'button', title:'Voltar ao tamanho normal', onclick:function(){ set(1); }});
+  var ctr = h('div', {class:'pz-ctrl', role:'group', 'aria-label':'Zoom da árvore'}, [
+    h('button', {class:'pz-btn', type:'button', title:'Afastar', 'aria-label':'Afastar', text:'−', onclick:function(){ set(z - 0.15); }}),
+    lbl,
+    h('button', {class:'pz-btn', type:'button', title:'Aproximar', 'aria-label':'Aproximar', text:'+', onclick:function(){ set(z + 0.15); }}),
+    h('button', {class:'pz-btn', type:'button', title:'Centralizar em quem está em foco', 'aria-label':'Centralizar', text:'◎', onclick:function(){ center(); }})
+  ]);
+  wrap.appendChild(ctr);
+  function target(){ return content ? (typeof content === 'function' ? content() : content) : sc.firstElementChild; }
+  function apply(){ var t = target(); if(t) t.style.zoom = z === 1 ? '' : String(z); lbl.textContent = Math.round(z * 100) + '%'; }
+  function set(v){
+    var cx = sc.scrollLeft + sc.clientWidth / 2, cy = sc.scrollTop + sc.clientHeight / 2, old = z;
+    z = Math.max(0.4, Math.min(1.8, Math.round(v * 100) / 100)); apply();
+    try{ localStorage.setItem('arvore-zoom-' + key, String(z)); }catch(e){}
+    var r = z / old; sc.scrollLeft = cx * r - sc.clientWidth / 2; sc.scrollTop = cy * r - sc.clientHeight / 2;
+  }
+  function center(){
+    var f = sc.querySelector('.focus-card, .an-root > .an-card');
+    if(!f){ sc.scrollLeft = (sc.scrollWidth - sc.clientWidth) / 2; return; }
+    var a = sc.getBoundingClientRect(), b = f.getBoundingClientRect();
+    sc.scrollLeft += (b.left + b.width / 2) - (a.left + a.width / 2);
+    sc.scrollTop += (b.top + b.height / 2) - (a.top + a.height / 2);
+  }
+  // arrastar com o mouse (no celular o dedo já rola normalmente)
+  var drag = null, moved = false;
+  sc.addEventListener('pointerdown', function(e){
+    if(e.pointerType !== 'mouse' || e.button !== 0) return;
+    drag = {x:e.clientX, y:e.clientY, l:sc.scrollLeft, t:sc.scrollTop}; moved = false;
+  });
+  window.addEventListener('pointermove', function(e){
+    if(!drag) return;
+    var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if(!moved && Math.abs(dx) + Math.abs(dy) < 6) return;
+    moved = true; sc.classList.add('panning');
+    sc.scrollLeft = drag.l - dx; sc.scrollTop = drag.t - dy;
+  });
+  window.addEventListener('pointerup', function(){ if(drag){ drag = null; setTimeout(function(){ sc.classList.remove('panning'); }, 0); } });
+  sc.addEventListener('click', function(e){ if(moved){ e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
+  // Ctrl + roda do mouse = zoom
+  sc.addEventListener('wheel', function(e){ if(!e.ctrlKey) return; e.preventDefault(); set(z + (e.deltaY < 0 ? 0.1 : -0.1)); }, {passive:false});
+  sc._pz = {apply:apply, center:center};
+  apply();
+}
+function centerPed(){ var sc = $('pedScroll'); if(!sc) return; panZoom(sc, 'compacta', function(){ return $('pedigree'); }); requestAnimationFrame(function(){ sc.scrollLeft = Math.max(0, (sc.scrollWidth - sc.clientWidth) / 2); if(sc._pz) sc._pz.center(); }); }
+var pedOpen = {};   // ancestrais com os pais abertos na árvore compacta
+function ancestorsAbove(p, max){ var n = 0; (function up(x, d){ if(!x || d > max) return; [get(x.pai), get(x.mae)].forEach(function(y){ if(y){ n++; up(y, d + 1); } }); })(p, 1); return n; }
+// botão "+" num cartão: mostra que há mais gente acima e abre/fecha os pais dele
+function expSlot(el, p){
+  if(!p) return el;
+  var n = ancestorsAbove(p, 6), aberto = !!pedOpen[p.id];
+  if(!n && (shared.readOnly || (typeof managedBy === 'function' && managedBy(p.id)))) return el;
+  var b = h('button', {class:'exp-btn' + (aberto ? ' on' : '') + (n ? ' has' : ''), type:'button',
+    title:aberto ? 'Esconder os pais de ' + firstName(p) : (n ? 'Ver os pais de ' + firstName(p) + ' (' + n + ' ancestral(is) cadastrado(s) acima)' : 'Abrir para cadastrar os pais de ' + firstName(p)),
+    'aria-label':aberto ? 'Esconder os pais de ' + firstName(p) : 'Ver os pais de ' + firstName(p),
+    onclick:function(e){ e.stopPropagation(); if(aberto) delete pedOpen[p.id]; else pedOpen[p.id] = 1; renderPedigree(); }},
+    [aberto ? '−' : '+', n && !aberto ? h('span', {class:'exp-n', text:String(n)}) : null]);
+  el.classList.add('has-exp'); el.appendChild(b);
+  return el;
+}
 function renderPedigree(){
   var f = P[focusId], ped = $('pedigree'); ped.innerHTML = '';
   var gens = 0;
@@ -1330,26 +1417,31 @@ function renderPedigree(){
   var bis = []; avos.forEach(function(a){ bis.push(a && get(a.pai), a && get(a.mae)); });
   var roleAvo = ['Avô paterno','Avó paterna','Avô materno','Avó materna'];
 
-  if(bis.some(Boolean)){
+  // só abre bisavós/trisavós do ramo em que você clicou no "+" (cabe na tela, sem rolar para o lado)
+  var abreBis = avos.map(function(a){ return !!(a && pedOpen[a.id]); });
+  var abreTri = bis.map(function(b, k){ return !!(b && abreBis[k >> 1] && pedOpen[b.id]); });
+  if(abreTri.some(Boolean)){
     gens = 3;
     var tris = []; bis.forEach(function(b){ tris.push(b && get(b.pai), b && get(b.mae)); });
     ped.appendChild(h('div', {class:'gen-label', text:'Trisavós'}));
     for(var t = 0; t < 8; t++){
       var bc = bis[t];
-      ped.appendChild(h('div', {class:'couple s1 tri' + (bc ? ' has-child' : ' no-child')}, [
-        slot(tris[2*t], 'Trisavô', bc && bc.id, 'pai', true),
-        slot(tris[2*t+1], 'Trisavó', bc && bc.id, 'mae', true)
+      if(!abreTri[t]){ ped.appendChild(h('div', {class:'couple s1 tri ped-gap'})); continue; }
+      ped.appendChild(h('div', {class:'couple s1 tri has-child'}, [
+        slot(tris[2*t], 'Trisavô', bc.id, 'pai', true),
+        slot(tris[2*t+1], 'Trisavó', bc.id, 'mae', true)
       ]));
     }
   }
-  if(avos.some(Boolean)){
+  if(abreBis.some(Boolean)){
     gens = Math.max(gens, 2);
     ped.appendChild(h('div', {class:'gen-label', text:'Bisavós'}));
     for(var i = 0; i < 4; i++){
       var child = avos[i];
-      ped.appendChild(h('div', {class:'couple s2' + (child ? ' has-child' : '')}, [
-        slot(bis[2*i], 'Bisavô', child && child.id, 'pai', true),
-        slot(bis[2*i+1], 'Bisavó', child && child.id, 'mae', true)
+      if(!abreBis[i]){ ped.appendChild(h('div', {class:'couple s2 ped-gap'})); continue; }
+      ped.appendChild(h('div', {class:'couple s2 has-child'}, [
+        expSlot(slot(bis[2*i], 'Bisavô', child.id, 'pai', true), bis[2*i]),
+        expSlot(slot(bis[2*i+1], 'Bisavó', child.id, 'mae', true), bis[2*i+1])
       ]));
     }
   }
@@ -1359,8 +1451,8 @@ function renderPedigree(){
     for(var j = 0; j < 2; j++){
       var c = j === 0 ? pai : mae;
       ped.appendChild(h('div', {class:'couple s4' + (c ? ' has-child' : '')}, [
-        slot(avos[2*j], roleAvo[2*j], c && c.id, 'pai'),
-        slot(avos[2*j+1], roleAvo[2*j+1], c && c.id, 'mae')
+        expSlot(slot(avos[2*j], roleAvo[2*j], c && c.id, 'pai'), avos[2*j]),
+        expSlot(slot(avos[2*j+1], roleAvo[2*j+1], c && c.id, 'mae'), avos[2*j+1])
       ]));
     }
   }
