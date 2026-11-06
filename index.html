@@ -202,7 +202,15 @@ main{padding-block:26px 70px}
 .gen-label{grid-column:1/-1;font-size:.66rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--soft);margin-bottom:-28px}
 .couple{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .couple.s1{grid-column:span 2}.couple.s2{grid-column:span 4}.couple.s4{grid-column:span 8}.couple.s8{grid-column:span 16}
-.couple.s8{max-width:520px;justify-self:center;width:100%}
+.couple.s8{max-width:440px;justify-self:center;width:100%}
+/* cartões mais enxutos: o casal ocupa só o necessário e fica centralizado no seu espaço */
+.couple.s4{max-width:440px;justify-self:center;width:100%}
+.couple.s2{max-width:330px;justify-self:center;width:100%}
+.pedigree{row-gap:30px}
+.pedigree .pc{padding:6px 8px;gap:7px}
+.pedigree .pc .nm{font-size:.76rem}
+.pedigree .pc .yr{font-size:.66rem}
+.pedigree .empty-slot{min-height:40px}
 .couple.has-child::before{content:"";position:absolute;left:25%;right:25%;bottom:-12px;height:2px;background:var(--line)}
 .couple.has-child::after{content:"";position:absolute;left:50%;bottom:-38px;width:2px;height:26px;background:var(--line);transform:translateX(-1px)}
 .couple.has-child .slot::after{content:"";position:absolute;left:50%;bottom:-13px;width:2px;height:12px;background:var(--line);transform:translateX(-1px)}
