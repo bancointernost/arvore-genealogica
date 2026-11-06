@@ -786,7 +786,6 @@ body.read-only .fg-person.vazio, body.read-only button.empty-slot, body.read-onl
     <div class="fam-head">
       <div class="intro">
         <h2 id="famTitle">Grupos familiares</h2>
-        <p>Comece pelo casal principal. Em cada pessoa, abra a família de onde ela veio — os pais e os irmãos — e continue subindo quantas gerações quiser.</p>
       </div>
       <div class="fam-tools">
         <div class="fld"><label for="famStart">Começar pela família de</label><select id="famStart"></select></div>
@@ -2540,9 +2539,6 @@ function personBlock(p, role, depth, side){
     h('span', {}, [ role ? h('span', {class:'rl', text:role}) : null, h('span', {class:'nm', text:displayName(p)}), y ? h('span', {class:'yr', text:y}) : null ])
   ]));
   var ctm = contactsEl(p, true); if(ctm) block.appendChild(ctm);
-  if(typeof linksOf === 'function') linksOf(p.id).forEach(function(l){
-    block.appendChild(h('button', {class:'origin link-origin', type:'button', title:'Abrir na árvore ' + (l.nomeArvore || ''), onclick:function(){ openOther(l); }}, ['🔗 ' + firstName(p) + ' em ' + (l.nomeArvore || 'outra árvore') + ' ↗']));
-  });
   if(others){
     var names = p.conj.map(get).map(displayName).join(', ');
     block.appendChild(h('div', {class:'fg-also', text:'Casamentos: ' + names}));
