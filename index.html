@@ -370,6 +370,10 @@ ol.path b{color:var(--head)}
 .age-out.warn{color:var(--danger);background:var(--danger-pale);border-color:transparent}
 /* topo: menu, desfazer, avisos */
 .menu-wrap{position:relative}
+.lp-couples{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.lp-couple{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card)}
+.lp-couple:hover{border-color:var(--leaf);background:var(--leaf-pale)}
+.lp-couple small{color:var(--soft);font-size:.76rem}
 .orphan-box{display:flex;flex-direction:column;gap:8px;margin:0 0 10px;padding:9px 11px;border-radius:8px;background:var(--blue-pale);border:1px solid var(--border);font-size:.84rem}
 .orphan-box .btn{margin-top:6px}
 .managed-note{margin-top:10px;padding:8px 11px;border-radius:8px;background:var(--leaf-pale);border:1px solid var(--border);font-size:.84rem}
@@ -1489,6 +1493,33 @@ function renderFamilyPanel(f){
     el.appendChild(grid);
   });
 }
+// liga pai e mãe que JÁ estão cadastrados (sem criar pessoa nova)
+function openLinkParents(pid){
+  var p = P[pid]; if(!p) return;
+  var people = Object.keys(P).map(get).filter(function(x){ return x.id !== pid && !isAncestor(pid, x.id); }).sort(byName);
+  function sel(id, lbl, cur, sx){
+    var s = h('select', {id:id, 'aria-label':lbl}, [h('option', {value:'', text:'— ninguém —'})].concat(people.filter(function(x){ return !sx || x.sexo !== (sx === 'M' ? 'F' : 'M'); }).map(function(x){ return h('option', {value:x.id, text:label(x)}); })));
+    s.value = cur || ''; return s;
+  }
+  var sp = sel('lpPai', 'Pai', p.pai, 'M'), sm = sel('lpMae', 'Mãe', p.mae, 'F');
+  // casais que já têm filhos cadastrados: atalho de um clique
+  var casais = {}, lista = h('div', {class:'lp-couples'});
+  Object.keys(P).forEach(function(k){ var c = P[k]; if(k === pid || !c.pai || !c.mae) return; var key = c.pai + '|' + c.mae; (casais[key] = casais[key] || []).push(c); });
+  Object.keys(casais).sort(function(a, b){ return casais[b].length - casais[a].length; }).slice(0, 8).forEach(function(key){
+    var ids = key.split('|'), pa = get(ids[0]), ma = get(ids[1]); if(!pa || !ma) return;
+    lista.appendChild(h('button', {class:'lp-couple', type:'button', onclick:function(){ sp.value = pa.id; sm.value = ma.id; }}, [
+      h('b', {text:displayName(pa) + ' & ' + displayName(ma)}), h('small', {text:'pais de ' + casais[key].map(function(c){ return firstName(c); }).join(', ')})]));
+  });
+  var err = h('div', {class:'auth-err', role:'alert', hidden:true});
+  dialog({title:'Pai e mãe de ' + displayName(p), wide:true, sub:'Escolha pessoas que já estão na árvore. Nada novo é criado.',
+    body:[lista.children.length ? h('div', {class:'lbl', style:'margin-bottom:6px', text:'Casais da árvore (toque para escolher)'}) : null, lista.children.length ? lista : null,
+      h('div', {class:'fgrid', style:'margin-top:12px'}, [h('div', {class:'field'}, [h('label', {for:'lpPai', text:'Pai'}), sp]), h('div', {class:'field'}, [h('label', {for:'lpMae', text:'Mãe'}), sm])]), err],
+    actions:[{label:'Salvar', primary:true, onclick:function(){
+      var a = sp.value || null, b = sm.value || null;
+      if((a && isAncestor(pid, a)) || (b && isAncestor(pid, b))){ err.hidden = false; err.textContent = 'Essa escolha criaria um ciclo na árvore.'; return false; }
+      P[pid].pai = a; P[pid].mae = b; afterChange('ligar pais de ' + firstName(p)); toast('Pais de ' + firstName(p) + ' ligados');
+    }}]});
+}
 function setFocus(id){ if(!P[id]) return; focusId = id; save(); showView('arvore'); renderTree(); window.scrollTo({top:0, behavior:'smooth'}); }
 
 /* ---------- render: lista ---------- */
@@ -2283,7 +2314,8 @@ function personBlock(p, role, depth, side){
   } else {
     block.appendChild(h('div', {class:'origin-add'}, [
       h('button', {class:'btn sm', type:'button', text:'+ Pai', onclick:function(){ famOpen[p.id] = 1; openForm({addAs:'pai', of:p.id}); }}),
-      h('button', {class:'btn sm', type:'button', text:'+ Mãe', onclick:function(){ famOpen[p.id] = 1; openForm({addAs:'mae', of:p.id}); }})
+      h('button', {class:'btn sm', type:'button', text:'+ Mãe', onclick:function(){ famOpen[p.id] = 1; openForm({addAs:'mae', of:p.id}); }}),
+      h('button', {class:'btn sm', type:'button', text:'Ligar pais já cadastrados', onclick:function(){ famOpen[p.id] = 1; openLinkParents(p.id); }})
     ]));
   }
   return block;
@@ -4658,11 +4690,12 @@ function autoImportLinked(){
     }
     function same(rid, lid){ return lid && P[lid] && !used[lid] && firstTok(R[rid].nome) === firstTok(P[lid].nome) && !(R[rid].sexo && P[lid].sexo && R[rid].sexo !== P[lid].sexo); }
     function claim(rid, lid){ map[rid] = lid; used[lid] = 1; novosPares.push(rid); }
-    var queue = Object.keys(map), guard = 0;
+    var queue = Object.keys(map), guard = 0, religados = 0;
     while(queue.length && guard++ < 5000){
       var r = queue.shift(), loc = map[r], rp = R[r], lp = P[loc]; if(!rp || !lp) continue;
       ['pai','mae'].forEach(function(f){
-        var rr = rp[f]; if(!rr || !R[rr] || map[rr]) return;
+        var rr = rp[f]; if(!rr || !R[rr]) return;
+        if(map[rr]){ if(!lp[f] && P[map[rr]] && map[rr] !== loc && !isAncestor(loc, map[rr])){ lp[f] = map[rr]; religados++; } return; }
         if(lp[f]){ if(same(rr, lp[f])){ claim(rr, lp[f]); queue.push(rr); } return; }
         lp[f] = copy(rr); queue.push(rr);
       });
@@ -4679,6 +4712,7 @@ function autoImportLinked(){
         queue.push(rk);
       });
     }
+    if(religados && !criados.length){ normalize(); fixFam(); save(); renderAll(true); }
     if(!criados.length && !novosPares.length) return;
     // liga entre si as pessoas trazidas (pai, mãe e cônjuges de lá)
     criados.forEach(function(rid){
