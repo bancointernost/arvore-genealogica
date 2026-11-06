@@ -395,6 +395,16 @@ ol.path b{color:var(--head)}
 .age-out.warn{color:var(--danger);background:var(--danger-pale);border-color:transparent}
 /* topo: menu, desfazer, avisos */
 .menu-wrap{position:relative}
+.hist-list{display:flex;flex-direction:column;gap:8px;max-height:65vh;overflow:auto}
+.hist-row{border:1px solid var(--border);border-radius:9px;padding:8px 10px;background:var(--card)}
+.hist-row.desfeito{opacity:.55}
+.hist-head{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:.82rem}
+.hist-when{font-variant-numeric:tabular-nums;color:var(--soft)}
+.hist-who{font-weight:700;color:var(--head)}
+.hist-what{flex:1;min-width:0;color:var(--text)}
+.hist-det{margin-top:5px;font-size:.8rem;color:var(--soft);display:flex;flex-direction:column;gap:2px;overflow-wrap:anywhere}
+.hist-det b{color:var(--text)}
+
 .ped-opts{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:0 0 10px;font-size:.84rem}
 .ped-opts-lbl{font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--soft)}
 .ped-opt.vazio{opacity:.5}
@@ -1657,6 +1667,7 @@ function renderFocusPanel(f){
     mg ? null : h('button', {class:'btn sm', type:'button', text:'+ Irmão(ã)', onclick:function(){ openForm({siblingOf:f.id}); }}),
     h('button', {class:'btn sm', type:'button', text:'Grupo familiar', onclick:function(){ openFamilyOf(f.id); }}),
     h('button', {class:'btn sm', type:'button', text:'Parentesco…', onclick:function(){ $('relA').value = rootId() || f.id; $('relB').value = f.id; showView('parentesco'); renderRel(); }}),
+    (shared.db && typeof fb !== 'undefined' && fb.user) ? h('button', {class:'btn sm', type:'button', text:'Histórico', onclick:function(){ openHistory(f.id); }}) : null,
     (!mg && typeof fb !== 'undefined' && fb.isAdmin && !f.ni && isLiving(f)) ? h('button', {class:'btn sm primary', type:'button', text:f.convite ? '✉ Convite enviado' : '✉ Enviar convite', onclick:function(){ openPersonInvite(f.id); }}) : null,
     (!mg && typeof fb !== 'undefined' && fb.isAdmin && !f.ni) ? h('button', {class:'btn sm', type:'button', text:'🔗 Ligar árvores', onclick:function(){ openLinkDialog(f.id); }}) : null
   ]));
@@ -2756,16 +2767,23 @@ function personBody(p){
 function galBody(it){ var b = {pessoa:it.pessoa, img:it.drive ? '' : (it.img || ''), legenda:it.legenda || '', fonte:it.fonte || '', ord:it.ord || 0}; if(it.drive) b.drive = it.drive; return b; }
 function queueSync(){
   if(!shared.on || !shared.ready || shared.readOnly) return;
-  diffInto('pessoas', P, personBody); diffInto('galeria', G, galBody);
+  var hist = [];
+  diffInto('pessoas', P, personBody, hist); diffInto('galeria', G, galBody);
+  if(hist.length && typeof logHistory === 'function') logHistory(hist);
   pump(); updateStatus();
 }
-function diffInto(coll, map, body){
+function serverBody(coll, id){
+  var arr = shared.server[coll] || [];
+  for(var i = 0; i < arr.length; i++) if(arr[i].id === id) return JSON.parse(JSON.stringify(arr[i].data));
+  return null;
+}
+function diffInto(coll, map, body, hist){
   var s = shared.synced[coll];
   Object.keys(map).forEach(function(id){
     var b = body(map[id]), j = stableSig(b);
-    if(s[id] !== j){ s[id] = j; shared.ops.push({coll:coll, id:id, body:b}); }
+    if(s[id] !== j){ s[id] = j; shared.ops.push({coll:coll, id:id, body:b}); if(hist) hist.push({id:id, antes:serverBody(coll, id), depois:b}); }
   });
-  Object.keys(s).forEach(function(id){ if(!(id in map)){ delete s[id]; shared.ops.push({coll:coll, id:id, del:true}); } });
+  Object.keys(s).forEach(function(id){ if(!(id in map)){ delete s[id]; shared.ops.push({coll:coll, id:id, del:true}); if(hist) hist.push({id:id, antes:serverBody(coll, id), depois:null}); } });
 }
 function pump(){
   var i = 0;
@@ -2918,6 +2936,7 @@ function samePerson(a, b){
 }
 function resetBaseline(){ baseline = snapState(); }
 function recordUndo(label){
+  if(label) window._lastAction = label;
   if(!baseline){ resetBaseline(); return; }
   var cur = snapState(), step = {p:{}, g:{}, label:label || 'última alteração'}, n = 0, ids = {};
   Object.keys(cur.p).concat(Object.keys(baseline.p)).forEach(function(k){ ids[k] = 1; });
@@ -3001,6 +3020,7 @@ function buildMenu(){
   }
   if(!shared.readOnly){ item('+ Nova pessoa', 'Cadastrar alguém na árvore', function(){ openForm({}); }); menu.appendChild(h('div', {class:'menu-sep'})); }
   if(typeof installAvailable === 'function' && installAvailable()){ item('📲 Instalar app no celular', installHint(), doInstall); menu.appendChild(h('div', {class:'menu-sep'})); }
+  if(shared.on && shared.db && typeof fb !== 'undefined' && fb.user && !(typeof pub !== 'undefined' && pub.view)) item('Histórico de alterações', 'quem mudou o quê, e quando · desfazer', function(){ openHistory(null); });
   item('Exportar backup completo', '.json com tudo, para guardar', function(){ exportJSON(false); });
   item('Exportar para compartilhar', '.json sem contatos e datas completas de pessoas vivas', function(){ exportJSON(true); });
   item('Exportar GEDCOM', '.ged para FamilySearch, MyHeritage, Ancestry…', exportGedcom);
@@ -3667,6 +3687,101 @@ function migrateGalleryToDrive(){
   if(driveReady()) return go();
   dialog({title:'Mover galeria para o Google Drive', sub:ks.length + ' imagem(ns) da galeria estão guardadas no Firebase. Elas vão para a pasta "' + DRIVE_PASTA + '" no seu Google Drive e o Firebase passa a guardar só o link.',
     actions:[{label:'Conectar e mover', primary:true, onclick:function(close){ driveConnect().then(function(){ close(); go(); }, function(e){ toast(driveErrText(e)); close(); }); return false; }}]});
+}
+
+/* ================= histórico de alterações ================= */
+// arvores/{id}/historico/{ts}: quem mudou, quando, o quê (antes e depois de cada pessoa). Dá para desfazer.
+var HIST_F = {nome:'Nome', sexo:'Sexo', nasc:'Nascimento', falec:'Falecimento', local:'Natural de', cidade:'Mora em', apelido:'Apelido', profissao:'Profissão',
+  whats:'WhatsApp', tel2:'Outro telefone', email:'E-mail', insta:'Instagram', face:'Facebook', tiktok:'TikTok', link:'Site', notas:'Observações', fontes:'Fontes',
+  foto:'Foto', pai:'Pai', mae:'Mãe', conj:'Cônjuge', ni:'Nome não informado'};
+function histSlim(b, keepFoto){
+  if(!b) return null;
+  var o = {}; Object.keys(b).forEach(function(k){ if(k === 'ligPrev' || k === 'ord' || k === 'fotoPos') return; o[k] = b[k]; });
+  if(o.foto){ if(keepFoto && o.foto.length < 120000) o.foto = b.foto; else { delete o.foto; o.temFoto = true; } }
+  return o;
+}
+function logHistory(list){
+  if(typeof fb === 'undefined' || !fb.user || !shared.db) return;
+  var label = window._lastAction || 'alteração'; window._lastAction = '';
+  var items = list.map(function(it){
+    var fotoMudou = !!(it.antes && it.depois && (it.antes.foto || '') !== (it.depois.foto || ''));
+    var o = {id:it.id, antes:histSlim(it.antes, fotoMudou), depois:histSlim(it.depois, false)};
+    var nm = (it.depois && it.depois.nome) || (it.antes && it.antes.nome) || it.id; o.nome = nm;
+    return o;
+  }).filter(function(o){ return stableSig(o.antes) !== stableSig(o.depois); });
+  if(!items.length) return;
+  var doc = {ts:Date.now(), quando:firebase.firestore.FieldValue.serverTimestamp(), por:fb.email, porNome:(fb.user.displayName || fb.email), acao:label, pessoas:items};
+  if(JSON.stringify(doc).length > 900000){ doc.pessoas = items.map(function(o){ return {id:o.id, nome:o.nome, antes:o.antes ? {nome:o.antes.nome} : null, depois:o.depois ? {nome:o.depois.nome} : null, resumo:true}; }); }
+  var id = String(9e15 - doc.ts).padStart(16, '0') + '_' + Math.random().toString(36).slice(2, 7);   // mais novo primeiro
+  shared.db.collection('historico').doc(id).set(doc).catch(function(e){ console.warn('historico', e && e.code); });
+}
+function histChanges(it){
+  var a = it.antes || {}, d = it.depois || {}, out = [];
+  if(!it.antes) return ['cadastrou'];
+  if(!it.depois) return ['excluiu'];
+  Object.keys(HIST_F).forEach(function(f){
+    var va = f === 'conj' ? (a.conj || []).join(',') : (a[f] || ''), vd = f === 'conj' ? (d.conj || []).join(',') : (d[f] || '');
+    if(f === 'foto'){ if(!!(a.foto || a.temFoto) !== !!(d.foto || d.temFoto) || (a.foto && !d.temFoto)) out.push('foto'); return; }
+    if(String(va) !== String(vd)){
+      if(f === 'pai' || f === 'mae' || f === 'conj'){
+        var nm = function(v){ return v ? String(v).split(',').map(function(x){ return P[x] ? firstName(P[x]) : '?'; }).join(', ') : '—'; };
+        out.push(HIST_F[f] + ': ' + nm(va) + ' → ' + nm(vd));
+      } else out.push(HIST_F[f] + ': ' + (va || '—') + ' → ' + (vd || '—'));
+    }
+  });
+  return out.length ? out : ['ajustes internos'];
+}
+function openHistory(pid){
+  if(!shared.db){ toast('O histórico só existe na árvore compartilhada.'); return; }
+  var listBox = h('div', {class:'hist-list'}, [h('div', {class:'muted', text:'Carregando…'})]);
+  var close = dialog({title:pid && P[pid] ? 'Histórico de ' + displayName(P[pid]) : 'Histórico de alterações', wide:true,
+    sub:'Quem mudou o quê, e quando. Desfazer volta só o que aquela alteração mudou.', body:[listBox], cancel:'Fechar'});
+  var col = shared.db.collection('historico');
+  var q = col.orderBy ? col.orderBy('ts', 'desc').limit(200) : col;
+  q.get().then(function(snap){
+    var rows = snap.docs.map(function(d){ var o = d.data(); o._id = d.id; return o; }).sort(function(a, b){ return (b.ts || 0) - (a.ts || 0); });
+    if(pid) rows = rows.filter(function(r){ return (r.pessoas || []).some(function(x){ return x.id === pid; }); });
+    listBox.innerHTML = '';
+    if(!rows.length){ listBox.appendChild(h('div', {class:'muted', text:'Nenhuma alteração registrada ainda. O histórico começa a contar a partir desta versão.'})); return; }
+    rows.slice(0, 150).forEach(function(r){
+      var pess = (r.pessoas || []).filter(function(x){ return !pid || x.id === pid; });
+      var dt = new Date(r.ts || 0), quando = dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+      var det = h('div', {class:'hist-det'});
+      pess.slice(0, 30).forEach(function(x){ det.appendChild(h('div', {}, [h('b', {text:x.nome + ': '}), histChanges(x).join(' · ')])); });
+      if(pess.length > 30) det.appendChild(h('div', {class:'muted', text:'… e mais ' + (pess.length - 30) + ' pessoa(s).'}));
+      var podeDesfazer = !shared.readOnly && !r.desfeito && !pess.some(function(x){ return x.resumo; });
+      listBox.appendChild(h('div', {class:'hist-row' + (r.desfeito ? ' desfeito' : '')}, [
+        h('div', {class:'hist-head'}, [
+          h('span', {class:'hist-when', text:quando}),
+          h('span', {class:'hist-who', text:r.porNome || r.por || '?'}),
+          h('span', {class:'hist-what', text:(r.acao || 'alteração') + ' · ' + pess.length + ' pessoa(s)' + (r.desfeito ? ' · desfeita' : '')}),
+          podeDesfazer ? h('button', {class:'btn sm', type:'button', text:'Desfazer', onclick:function(){ undoHistory(r, pid, close); }}) : null
+        ]), det]));
+    });
+  }, function(e){ listBox.innerHTML = ''; listBox.appendChild(h('div', {class:'auth-err', text:e && e.code === 'permission-denied' ? 'Sem permissão para ler o histórico. Confira se as regras novas do Firestore foram publicadas.' : 'Não foi possível carregar o histórico (' + ((e && e.code) || 'erro') + ').'})); });
+}
+function undoHistory(r, pid, closeList){
+  var pess = (r.pessoas || []).filter(function(x){ return !pid || x.id === pid; });
+  dialog({title:'Desfazer esta alteração?', sub:'"' + (r.acao || 'alteração') + '" de ' + (r.porNome || r.por) + '. ' + pess.length + ' cadastro(s): só o que esta alteração mudou volta ao valor anterior. O que foi alterado depois continua.',
+    actions:[{label:'Desfazer', danger:true, onclick:function(){
+      pess.forEach(function(x){
+        if(!x.antes){ if(P[x.id]){ delete P[x.id]; Object.keys(P).forEach(function(k){ var q = P[k]; if(q.pai === x.id) q.pai = null; if(q.mae === x.id) q.mae = null; q.conj = (q.conj || []).filter(function(c){ return c !== x.id; }); }); } return; }
+        var cur = P[x.id];
+        if(!cur || !x.depois){   // pessoa excluída: volta inteira
+          var o = Object.assign({}, x.antes); delete o.temFoto; if(!('foto' in x.antes)) o.foto = '';
+          o.ord = nextOrd++; o.id = x.id; P[x.id] = o; return;
+        }
+        // edição: só os campos que ESTA alteração mudou voltam ao valor anterior; o resto fica como está
+        Object.keys(HIST_F).forEach(function(f){
+          var va = x.antes[f], vd = x.depois[f];
+          if(f === 'foto'){ if('foto' in x.antes) cur.foto = x.antes.foto; else if(!x.antes.temFoto && (x.depois.foto || x.depois.temFoto)) cur.foto = ''; return; }
+          if(stableSig(va === undefined ? '' : va) !== stableSig(vd === undefined ? '' : vd)) cur[f] = f === 'conj' ? (va || []).slice() : (va === undefined ? (f === 'pai' || f === 'mae' ? null : '') : va);
+        });
+      });
+      normalize(); fixFam(); recordUndo('desfazer: ' + (r.acao || 'alteração')); save(); renderAll();
+      if(r._id) shared.db.collection('historico').doc(r._id).update({desfeito:true}).catch(function(){});
+      toast('Alteração desfeita'); if(closeList) closeList();
+    }}]});
 }
 
 /* ================= galeria: visualização ================= */
