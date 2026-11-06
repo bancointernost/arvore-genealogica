@@ -121,6 +121,11 @@ main{padding-block:26px 70px}
 .av.sm{width:26px;height:26px;font-size:.7rem}
 .av.foto{padding:0;overflow:hidden;background:var(--u-bg)}
 .av.foto img{width:100%;height:100%;object-fit:cover;display:block}
+.av-wrap{position:relative;display:inline-flex;flex:none}
+.av-cross{position:absolute;right:-3px;bottom:-3px;width:15px;height:15px;border-radius:50%;background:var(--card);color:var(--text);border:1px solid var(--border);font-size:9px;line-height:13px;text-align:center;font-weight:700;box-shadow:var(--shadow)}
+.av-wrap.sm .av-cross{width:12px;height:12px;font-size:7px;line-height:10px;right:-3px;bottom:-3px}
+.av-wrap.lg .av-cross{width:20px;height:20px;font-size:12px;line-height:18px;right:-2px;bottom:-2px}
+.av-wrap.xl .av-cross{width:28px;height:28px;font-size:16px;line-height:26px;right:4px;bottom:4px}
 .av.xl{width:112px;height:112px;font-size:2.4rem;border-width:3px}
 .focus-photo{display:flex;gap:16px;align-items:center;margin-top:6px}
 /* foto no formulário */
@@ -283,6 +288,8 @@ ol.path b{color:var(--head)}
 .field .place-row select{padding-right:4px}
 .place-pick.bad input[type=text]{border-color:var(--danger)}
 .place-msg{font-size:.78rem;color:var(--danger)}
+.place-msg.ok{color:var(--teal)}
+.place-msg .btn{margin-top:5px;white-space:normal;text-align:left}
 
 .radios{display:flex;gap:14px;flex-wrap:wrap;padding-top:4px}
 .radios label{display:inline-flex;gap:5px;align-items:center;font-size:.9rem;text-transform:none;letter-spacing:0;font-weight:500;color:var(--text)}
@@ -905,19 +912,33 @@ function parsePlace(v){
   if(f2 && f2.ambiguo) return {uf:'', cidade:v};
   return {uf:'EX', cidade:v};
 }
+// nomes antigos de municípios (comuns em certidões e documentos antigos) → nome atual
+var CIDADES_ANTIGAS = {
+  PB:{'Antenor Navarro':'São João do Rio do Peixe', 'Misericórdia':'Itaporanga', 'Princesa':'Princesa Isabel', 'Santa Luzia do Sabugi':'Santa Luzia', 'Batalhão':'Taperoá'},
+  MG:{'Curral del Rei':'Belo Horizonte', 'Figueira do Rio Doce':'Governador Valadares'},
+  PI:{'Vila Nova do Poti':'Teresina'},
+  SP:{'Moji das Cruzes':'Mogi das Cruzes', 'Moji-Mirim':'Mogi Mirim', 'Moji-Guaçu':'Mogi Guaçu', 'Embu':'Embu das Artes'},
+  RJ:{'Parati':'Paraty'}
+};
+function oldCity(uf, nome){
+  var n = normPlace(nome), hit = null;
+  (uf ? [uf] : Object.keys(CIDADES_ANTIGAS)).forEach(function(u){ var m = CIDADES_ANTIGAS[u] || {}; Object.keys(m).forEach(function(k){ if(!hit && normPlace(k) === n) hit = {uf:u, antigo:k, atual:m[k]}; }); });
+  return hit;
+}
 function cityList(uf){
   var id = 'dlCid_' + (uf || 'todas'), el = document.getElementById(id);
   if(el) return id;
   el = document.createElement('datalist'); el.id = id;
   var frag = document.createDocumentFragment();
-  if(uf) cidades()[uf].forEach(function(c){ var o = document.createElement('option'); o.value = c; frag.appendChild(o); });
+  if(uf){ cidades()[uf].forEach(function(c){ var o = document.createElement('option'); o.value = c; frag.appendChild(o); });
+    Object.keys(CIDADES_ANTIGAS[uf] || {}).forEach(function(k){ var o = document.createElement('option'); o.value = k; o.label = 'nome antigo de ' + CIDADES_ANTIGAS[uf][k]; frag.appendChild(o); }); }
   else Object.keys(cidades()).forEach(function(u){ cidades()[u].forEach(function(c){ var o = document.createElement('option'); o.value = c + ' / ' + u; frag.appendChild(o); }); });
   el.appendChild(frag); document.body.appendChild(el);
   return id;
 }
 // troca o campo de texto por: [Estado ▾] [Cidade com busca]. O input original fica escondido e guarda "Cidade / UF".
 function placePicker(inp, rotulo){
-  var base = inp.id, cur = parsePlace(inp.value);
+  var base = inp.id, cur = parsePlace(inp.value), aceitos = {};
   var sel = h('select', {id:base + '_uf', 'aria-label':'Estado (' + rotulo + ')'}, [h('option', {value:'', text:'UF'})]
     .concat(Object.keys(UF_NOMES).sort().map(function(u){ return h('option', {value:u, text:u, title:UF_NOMES[u]}); }))
     .concat([h('option', {value:'EX', text:'Exterior'})]));
@@ -936,17 +957,22 @@ function placePicker(inp, rotulo){
     inp.value = uf === 'EX' ? c : (c && uf ? c + ' / ' + uf : uf && !c ? uf : c);
   }
   function check(final){
-    var uf = sel.value, c = city.value.trim(); msg.hidden = true; wrap.classList.remove('bad');
+    var uf = sel.value, c = city.value.trim(); msg.hidden = true; msg.className = 'place-msg'; wrap.classList.remove('bad');
     if(uf === 'EX' || !c){ compose(); return true; }
     var m = c.match(/^(.*?)\s*\/\s*([A-Z]{2})$/);          // escolheu "Cidade / UF" na lista geral
     if(m && UF_NOMES[m[2]]){ sel.value = m[2]; c = m[1]; city.value = c; setup(); uf = m[2]; }
     var f = findCity(uf, c);
     if(f && !f.ambiguo){ sel.value = f.uf; city.value = f.c; setup(); compose(); return true; }
+    var old = oldCity(uf, c);
+    if(old){ sel.value = old.uf; city.value = old.antigo; setup(); compose(); msg.hidden = false; msg.className = 'place-msg ok'; msg.textContent = 'Nome antigo — hoje é ' + old.atual + ' (' + old.uf + ').'; return true; }
     compose();
+    if(aceitos[normPlace(c) + '|' + uf] && uf){ msg.hidden = false; msg.className = 'place-msg ok'; msg.textContent = 'Nome fora da lista atual do IBGE (nome antigo, distrito ou povoado).'; return true; }
     if(final){
-      msg.hidden = false; wrap.classList.add('bad');
-      msg.textContent = f && f.ambiguo ? 'Existe "' + c + '" em ' + f.ambiguo.map(function(x){ return x.uf; }).join(', ') + '. Escolha o estado.'
-        : uf ? 'Cidade não encontrada em ' + UF_NOMES[uf] + '. Escolha uma da lista.' : 'Cidade não encontrada. Escolha o estado e uma cidade da lista.';
+      msg.hidden = false; msg.className = 'place-msg'; wrap.classList.add('bad'); msg.innerHTML = '';
+      msg.appendChild(document.createTextNode(f && f.ambiguo ? 'Existe "' + c + '" em ' + f.ambiguo.map(function(x){ return x.uf; }).join(', ') + '. Escolha o estado.'
+        : uf ? 'Cidade não encontrada em ' + UF_NOMES[uf] + '. Escolha uma da lista. ' : 'Cidade não encontrada. Escolha o estado e uma cidade da lista.'));
+      if(uf && !(f && f.ambiguo)) msg.appendChild(h('button', {class:'btn sm', type:'button', text:'Usar "' + c + '" mesmo assim (nome antigo, distrito ou povoado)', onclick:function(){
+        aceitos[normPlace(c) + '|' + uf] = 1; check(true); city.dispatchEvent(new Event('input', {bubbles:true})); }}));
     }
     return false;
   }
@@ -957,6 +983,7 @@ function placePicker(inp, rotulo){
   city.addEventListener('input', function(){ check(false); });
   city.addEventListener('change', function(){ check(true); });
   setup(); compose();
+  if(inp.value && cur.uf && cur.uf !== 'EX' && cur.cidade && !findCity(cur.uf, cur.cidade)) aceitos[normPlace(cur.cidade) + '|' + cur.uf] = 1;   // já salvo antes: respeita
   if(inp.value && cur.uf !== 'EX' && cur.cidade) check(true);
   return {el:wrap, ok:function(){ return check(true); }, focus:function(){ city.focus(); }};
 }
@@ -1023,8 +1050,11 @@ function years(p, semIdade){
 }
 function avatar(p, size){
   var cls = 'av ' + (p && p.sexo ? p.sexo : '') + (size ? ' ' + size : '');
-  if(p && p.foto) return h('div', {class:cls + ' foto', 'aria-hidden':'true'}, [h('img', {src:p.foto, alt:'', loading:'lazy', decoding:'async'})]);
-  return h('div', {class:cls, text:initial(p), 'aria-hidden':'true'});
+  var el = (p && p.foto) ? h('div', {class:cls + ' foto', 'aria-hidden':'true'}, [h('img', {src:p.foto, alt:'', loading:'lazy', decoding:'async'})])
+    : h('div', {class:cls, text:initial(p), 'aria-hidden':'true'});
+  // falecido(a): cruzinha no canto da foto
+  if(p && p.falec && String(p.falec).trim()) return h('span', {class:'av-wrap' + (size ? ' ' + size : ''), title:g(p, 'Falecido', 'Falecida', 'Falecido(a)')}, [el, h('span', {class:'av-cross', 'aria-hidden':'true', text:'✝'})]);
+  return el;
 }
 function children(id){ return Object.keys(P).filter(function(k){return P[k].pai === id || P[k].mae === id;}).map(get).sort(byOrd); }
 function siblings(id){
