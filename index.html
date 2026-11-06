@@ -791,6 +791,7 @@ var STORE_KEY = 'arvore-thais-v1';
 // pessoa de referência: "eu" (Meu perfil) ou a família principal
 function rootId(){
   if(typeof meId !== 'undefined' && meId && P && P[meId]) return meId;
+  var ls = typeof linkedSelf === 'function' ? linkedSelf() : null; if(ls) return ls;
   if(typeof famHome !== 'undefined' && famHome && P && P[famHome]) return famHome;
   return null;
 }
@@ -4405,6 +4406,17 @@ function openLinkDialog(pid, preset){
 }
 // cadastro mantido por outra árvore (a pessoa compartilhou o perfil oficial dela, ou foi trazido de lá):
 // aqui ele só aparece; ramificações e edição ficam com a árvore de origem enquanto a ligação existir
+// nesta árvore eu não tenho perfil próprio, mas sou a cópia ligada do meu perfil oficial de outra árvore
+function linkedSelf(){
+  if(typeof fb === 'undefined' || !fb.email || !P || typeof allLinks !== 'function') return null;
+  var found = null;
+  allLinks().forEach(function(l){
+    var c = linkDirect[l.lid]; if(found || !c || !c.todos) return;
+    var sd = linkSide(l);
+    (l.pares || []).forEach(function(par){ var r = c.todos[par[sd.other]]; if(!found && r && r.perfilDono === fb.email && P[par[sd.mine]]) found = par[sd.mine]; });
+  });
+  return found;
+}
 function managedBy(pid){
   var p = P && P[pid]; if(!p || p.perfilDono || typeof allLinks !== 'function') return '';
   var name = '';
@@ -4550,7 +4562,7 @@ function runLinkSync(){
     return autoImportLinked().catch(function(e){ console.warn('ligacao/familia', e); });
   }).then(function(){
     try{ pullLinked(); }catch(e){ console.warn('ligacao/puxar', e); }
-    try{ if(current === 'arvore') renderTree(); }catch(e){}
+    try{ renderAll(true); }catch(e){}
     return fb.isAdmin ? pushLinked() : null;
   });
   pr.then(function(){ linkSync.busy = false; }, function(e){ linkSync.busy = false; console.warn('ligacao/publicar', e); });
