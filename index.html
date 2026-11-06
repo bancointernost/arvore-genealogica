@@ -527,7 +527,7 @@ body.auth-locked header.top, body.auth-locked main, body.auth-locked #banner{dis
 .invite-code small{color:var(--soft);font-size:.82rem}
 body.public-view nav.tabs button[data-view="perfil"], body.public-view nav.tabs button[data-view="revisar"], body.public-view nav.tabs button[data-view="membros"]{display:none}
 body.read-only #focusPanel .actions button:nth-child(-n+4), body.read-only .focus-photo .btn, body.read-only .origin-add, body.read-only .fg-kids .lbl .btn,
-body.read-only .fg-person.vazio, body.read-only button.empty-slot, body.read-only .full-sec-head .btn{display:none}
+body.read-only .fg-person.vazio, body.read-only button.empty-slot, body.read-only .full-sec-head .btn, body.read-only .fg-kids .lbl .btn, body.read-only .orphan-box, body.read-only .tree-head .btn:not(#treeFull), body.read-only .dt-head .btn{display:none}
 .who-links{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .acc-cur{display:flex;flex-direction:column;gap:2px;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:6px}
 .acc-h3{font-family:var(--font-body);font-size:.76rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--teal);margin:14px 0 4px}
@@ -1275,7 +1275,7 @@ function renderFull(f){
   var dl = dstat.n ? dstat.n + (dstat.n === 1 ? ' pessoa' : ' pessoas') + ' em ' + dstat.g + (dstat.g === 1 ? ' geração' : ' gerações') : 'nenhum descendente cadastrado';
   box.appendChild(h('section', {class:'full-sec'}, [
     h('div', {class:'full-sec-head'}, [h('h2', {text:'Descendentes de ' + displayName(f)}),
-      h('span', {class:'muted'}, [dl + ' · ', h('button', {class:'btn sm', type:'button', text:'+ Filho(a)', onclick:function(){ openForm({childOf:f.id}); }})])]),
+      h('span', {class:'muted'}, [dl, shared.readOnly ? null : ' · ', shared.readOnly ? null : h('button', {class:'btn sm', type:'button', text:'+ Filho(a)', onclick:function(){ openForm({childOf:f.id}); }})])]),
     h('div', {class:'full-scroll'}, [dtree])
   ]));
 }
@@ -1439,6 +1439,13 @@ function renderFocusPanel(f){
   var femaleOrMale = f.sexo === 'F' ? 'mae' : 'pai';
   var mg = typeof managedBy === 'function' ? managedBy(f.id) : '';
   if(mg) el.appendChild(managedNote(f, mg));
+  if(shared.readOnly){
+    el.appendChild(h('div', {class:'actions'}, [
+      h('button', {class:'btn sm', type:'button', text:'Grupo familiar', onclick:function(){ openFamilyOf(f.id); }}),
+      h('button', {class:'btn sm', type:'button', text:'Parentesco…', onclick:function(){ $('relA').value = rootId() || f.id; $('relB').value = f.id; showView('parentesco'); renderRel(); }})
+    ]));
+    return;
+  }
   el.appendChild(h('div', {class:'actions'}, [
     mg ? null : h('button', {class:'btn sm', type:'button', text:'Editar', onclick:function(){ openForm({edit:f.id}); }}),
     (mg && !f.conj.some(function(c){ return !managedBy(c); })) ? null : h('button', {class:'btn sm', type:'button', text:'+ Filho(a)', onclick:function(){ openForm({childOf:f.id}); }}),
@@ -1511,6 +1518,7 @@ function renderFamilyPanel(f){
 }
 // liga pai e mãe que JÁ estão cadastrados (sem criar pessoa nova)
 function openLinkParents(pid){
+  if(shared.readOnly) return;
   var p = P[pid]; if(!p) return;
   var people = Object.keys(P).map(get).filter(function(x){ return x.id !== pid && !isAncestor(pid, x.id); }).sort(byName);
   function sel(id, lbl, cur, sx){
@@ -1554,7 +1562,7 @@ function renderList(){
       h('td', {}, p.conj.length ? p.conj.map(function(c,i){ return h('span', {}, [i ? ', ' : null, cellLink(c)]); }) : [h('span',{class:'muted',text:'—'})]),
       h('td', {class:'num', text:String(children(p.id).length)}),
       h('td', {}, [contactsEl(p, true) || h('span', {class:'muted', text:'—'})]),
-      h('td', {}, [h('button', {class:'btn sm', type:'button', text:'Editar', onclick:function(){ openForm({edit:p.id}); }})])
+      h('td', {}, [shared.readOnly ? null : h('button', {class:'btn sm', type:'button', text:'Editar', onclick:function(){ openForm({edit:p.id}); }})])
     ]));
   });
   if(!arr.length) body.appendChild(h('tr', {}, [h('td', {colspan:'7', class:'muted', text:'Ninguém encontrado com esse nome.'})]));
@@ -1631,6 +1639,7 @@ function renderExamples(){
 
 /* ---------- formulário ---------- */
 function openForm(ctx){
+  if(shared.readOnly && !(ctx.inline && ctx.view)){ toast('Somente visualização: para alterar, entre com uma conta que tenha acesso de editor.'); return; }
   if(!ctx.inline && ((ctx.edit && blockManaged(ctx.edit)) || (ctx.addAs && blockManaged(ctx.of)) || (ctx.siblingOf && blockManaged(ctx.siblingOf)) || (ctx.spouseOf && blockManaged(ctx.spouseOf)))) return;
   var px = ctx.inline ? 'p' : 'f';
   var editing = ctx.edit ? P[ctx.edit] : null;
@@ -2375,7 +2384,7 @@ function renderGroup(a, b, ctx){
   var parentForNew = a || b, co = a && b ? (parentForNew === a ? b.id : a.id) : null;
   kidsBox.appendChild(h('div', {class:'lbl'}, [
     h('span', {text:(kids.length ? 'Filhos (' + kids.length + ')' : 'Filhos')}),
-    parentForNew ? h('button', {class:'btn sm', type:'button', text:'+ Filho(a)', onclick:function(){ openForm({childOf:parentForNew.id, coParent:co}); }}) : null
+    parentForNew && !shared.readOnly ? h('button', {class:'btn sm', type:'button', text:'+ Filho(a)', onclick:function(){ openForm({childOf:parentForNew.id, coParent:co}); }}) : null
   ]));
   if(kids.length){
     var chips = h('div', {class:'chips'});
@@ -4021,7 +4030,13 @@ function renderMembers(){
 var pub = {code:'', fotos:false, ativo:false, sigs:null, timer:null, busy:false, again:false, view:''};
 function publicLink(code){ return location.origin + location.pathname + '?publico=' + code; }
 // a página pública mostra só quem é desta árvore: cadastros compartilhados por outra árvore (e a família que veio com eles) ficam de fora
-function publicOut(id){ var p = P[id]; if(!p) return true; if(p.origemLig) return true; return typeof managedBy === 'function' && !!managedBy(id); }
+function sharedHere(id){ var p = P[id]; if(!p) return true; if(p.origemLig) return true; return typeof managedBy === 'function' && !!managedBy(id); }
+// exceção: o núcleo familiar (cônjuge de alguém desta árvore) aparece, sem os pais e irmãos que vieram da outra árvore
+function publicOut(id){
+  if(!sharedHere(id)) return false;
+  var p = P[id]; if(!p) return true;
+  return !(p.conj || []).some(function(c){ return P[c] && !sharedHere(c); });
+}
 function publicBody(p){
   var vivo = isLiving(p);
   function ok(x){ return x && !publicOut(x) ? x : null; }
@@ -4088,7 +4103,7 @@ function publicPanel(){
   var box = h('section', {class:'panel', style:'margin-top:16px'}, [h('h3', {text:'Página pública'})]);
   var cb = h('input', {type:'checkbox', id:'pubFotos'}); cb.checked = pub.fotos;
   var fotosLbl = h('label', {class:'check', for:'pubFotos'}, [cb, 'Mostrar fotos de pessoas vivas']);
-  box.appendChild(h('p', {class:'muted', style:'margin:0 0 10px', text:'Qualquer pessoa com o link vê a árvore, sem precisar de login. Pessoas que outra árvore compartilhou com você (e a família delas) não aparecem: elas só entram na página pública da árvore de origem. A página pública nunca mostra telefones, e-mails, redes sociais, endereço, profissão, observações nem datas completas de pessoas vivas (só o ano). Quem quiser pode pedir para participar ou criar a própria conta.'}));
+  box.appendChild(h('p', {class:'muted', style:'margin:0 0 10px', text:'Qualquer pessoa com o link vê a árvore, sem precisar de login. Quem outra árvore compartilhou com você aparece só como parte do seu núcleo familiar (cônjuge); os pais, irmãos e o resto da família dessa pessoa ficam só na página pública da árvore de origem. A página pública nunca mostra telefones, e-mails, redes sociais, endereço, profissão, observações nem datas completas de pessoas vivas (só o ano). Quem quiser pode pedir para participar ou criar a própria conta.'}));
   if(pub.code && pub.ativo){
     var link = publicLink(pub.code), inp = h('input', {type:'text', id:'pubLink', value:link, readonly:true, 'aria-label':'Link público'});
     var msg = 'Veja a árvore genealógica "' + tree.nome + '": ' + link;
@@ -4314,6 +4329,7 @@ function personInviteMsg(p, link){
   return 'Oi, ' + (p.apelido || firstName(p)) + '! Montei a árvore genealógica da família "' + tree.nome + '" e você está nela. Entre por este link para ver a árvore e completar seu cadastro (foto, contatos, histórias): ' + link;
 }
 function openPersonInvite(pid){
+  if(shared.readOnly) return;
   var p = P[pid]; if(!p) return;
   var body = h('div');
   function showLink(code){
@@ -4412,6 +4428,7 @@ function genLinkCode(pid, papel){
   return bt.commit().then(function(){ P[pid].codigoLigacao = code; save(); return code; });
 }
 function openLinkDialog(pid, preset){
+  if(shared.readOnly) return;
   var p = P[pid]; if(!p) return;
   var body = h('div', {class:'link-dlg'});
   // 1) tenho um código
