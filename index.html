@@ -784,7 +784,7 @@ function normalize(){
     var p = P[id]; p.id = id; p.conj = Array.isArray(p.conj) ? p.conj.filter(function(c){return P[c] && c !== id;}) : [];
     if(p.pai && !P[p.pai]) p.pai = null; if(p.mae && !P[p.mae]) p.mae = null;
     if(typeof p.ord !== 'number') p.ord = 0;
-    ['nome','sexo','notas','nasc','falec','local','foto','whats','tel2','insta','face','tiktok','link','apelido','profissao','cidade','email','fontes','convite','codigoLigacao','perfilDono'].forEach(function(k){ if(typeof p[k] !== 'string') p[k] = ''; });
+    ['nome','sexo','notas','nasc','falec','local','foto','whats','tel2','insta','face','tiktok','link','apelido','profissao','cidade','email','fontes','convite','codigoLigacao','perfilDono','origemLig'].forEach(function(k){ if(typeof p[k] !== 'string') p[k] = ''; });
     if(p.foto && p.foto.indexOf('data:image/') !== 0) p.foto = '';
   });
   // cônjuges simétricos
@@ -1574,7 +1574,8 @@ function openForm(ctx){
   var lkCodeIn = h('input', {type:'text', id:px+'_lkcode', placeholder:'ex.: ABC-123', autocomplete:'off', autocapitalize:'characters', spellcheck:'false'});
   var fontes = h('textarea', {id:px+'_fontes', placeholder:'Ex.: certidão de nascimento; conversa com a tia Joana em 2026; registro da paróquia…', style:'min-height:56px'}); fontes.value = d.fontes || '';
   // ----- galeria (alterações só valem ao salvar) -----
-  var galDraft = editing ? galleryOf(editing.id).map(function(it){ return {id:it.id, img:it.img, legenda:it.legenda || '', fonte:it.fonte || ''}; }) : [];
+  var galDraft = editing ? galleryOf(editing.id).map(function(it){ return {id:it.id, img:it.img, drive:it.drive || '', legenda:it.legenda || '', fonte:it.fonte || ''}; }) : [];
+  var galNovosDrive = [], galSalvo = false, galBtn = null, galNote = null;
   var galBox = h('div', {class:'gal-edit'}), galBusy = 0;
   var galIn = h('input', {type:'file', id:px+'_galfile', accept:'image/*', multiple:true, hidden:true});
   function drawGal(){
@@ -1585,12 +1586,13 @@ function openForm(ctx){
       leg.addEventListener('input', function(){ it.legenda = leg.value; });
       fon.addEventListener('input', function(){ it.fonte = fon.value; });
       galBox.appendChild(h('div', {class:'gal-row'}, [
-        h('img', {src:it.img, alt:''}),
+        galImg(it, 300),
         h('div', {class:'gal-fields'}, [leg, fon]),
-        h('button', {class:'btn sm danger', type:'button', text:'Remover', onclick:function(){ galDraft.splice(i, 1); drawGal(); if(typeof markTabs === 'function') markTabs(); }})
+        h('button', {class:'btn sm danger', type:'button', text:'Remover', onclick:function(){ var x = galDraft.splice(i, 1)[0]; if(x && x.drive && galNovosDrive.indexOf(x.drive) >= 0) driveDelete(x.drive); drawGal(); if(typeof markTabs === 'function') markTabs(); }})
       ]));
     });
-    if(galBusy) galBox.appendChild(h('div', {class:'muted', text:'Preparando ' + galBusy + ' imagem(ns)…'}));
+    if(galBusy) galBox.appendChild(h('div', {class:'muted', text:(driveMode() ? 'Enviando ' : 'Preparando ') + galBusy + ' imagem(ns)' + (driveMode() ? ' para o Google Drive…' : '…')}));
+    drawGalBtn();
     if(!galDraft.length && !galBusy) galBox.appendChild(h('div', {class:'muted', text:'Nenhuma imagem ainda. Adicione fotos antigas, certidões, documentos ou recortes.'}));
   }
   galIn.addEventListener('change', function(){
@@ -1598,10 +1600,35 @@ function openForm(ctx){
     files.forEach(function(file){
       if(!/^image\//.test(file.type)) return;
       galBusy++; drawGal();
-      compressImage(file).then(function(img){ galDraft.push({id:null, img:img, legenda:'', fonte:''}); }, function(){ toast('Não consegui abrir ' + file.name); })
+      var nm = (file.name || 'imagem').replace(/\.[^.]+$/, '') + '.jpg';
+      compressImage(file, driveMode() ? {max:2000, limite:1800000} : null).then(function(img){
+        if(!driveMode()){ galDraft.push({id:null, img:img, legenda:'', fonte:''}); return; }
+        return driveUpload(img, nm).then(function(fid){ galNovosDrive.push(fid); galDraft.push({id:null, img:'', drive:fid, legenda:'', fonte:''}); },
+          function(e){ toast(driveErrText(e)); });
+      }, function(){ toast('Não consegui abrir ' + file.name); })
         .then(function(){ galBusy--; drawGal(); if(typeof markTabs === 'function') markTabs(); });
     });
   });
+  // botão: no app na nuvem, primeiro conecta o Google Drive (precisa ser num toque, por causa da janela do Google)
+  function drawGalBtn(){
+    if(!galBtn) return;
+    var need = driveMode() && !driveReady();
+    galBtn.textContent = need ? 'Conectar Google Drive' : '+ Adicionar imagens';
+    galNote.textContent = driveMode()
+      ? (need ? 'As imagens da galeria ficam no seu Google Drive (pasta "' + DRIVE_PASTA + '"), não no banco do app. Conecte uma vez por sessão.'
+              : 'Conectado ao Google Drive. As imagens vão para a pasta "' + DRIVE_PASTA + '" e ficam visíveis para quem tem o link.')
+      : 'Fotos antigas, certidões e documentos. As imagens são reduzidas automaticamente.';
+  }
+  galBtn = h('button', {class:'btn sm', type:'button', onclick:function(){
+    if(driveMode() && !driveReady()){
+      galBtn.disabled = true;
+      driveConnect().then(function(){ toast('Google Drive conectado. Agora toque em "+ Adicionar imagens".'); }, function(e){ toast(driveErrText(e)); })
+        .then(function(){ galBtn.disabled = false; drawGalBtn(); });
+      return;
+    }
+    galIn.click();
+  }});
+  galNote = h('p', {class:'auth-fine', style:'margin:6px 0 0'});
   drawGal();
   // ----- foto -----
   // fotoImg = imagem em edição; (cx, cy) = centro do recorte em px da imagem; fotoZoom = 1 mostra o maior quadrado possível
@@ -1776,8 +1803,8 @@ function openForm(ctx){
         h('div', {class:'photo-hint', text:'Recebeu um código de outra árvore com esta pessoa ou a família dela? Digite aqui: ao salvar, as árvores são ligadas.'})]) : null
     ]),
     galeria: grid([
-      h('div', {class:'field full'}, [h('div', {class:'row'}, [h('button', {class:'btn sm', type:'button', text:'+ Adicionar imagens', onclick:function(){ galIn.click(); }}), galIn]),
-        h('div', {class:'photo-hint', text:(inArtifact || shared.on) ? 'Fotos antigas, certidões e documentos. As imagens são reduzidas automaticamente.' : 'Fotos antigas, certidões e documentos. Neste arquivo local cabem poucas imagens; na página compartilhada da família cabem muitas mais.'})]),
+      h('div', {class:'field full'}, [h('div', {class:'row'}, [galBtn, galIn]), galNote,
+        (shared.on ? null : h('div', {class:'photo-hint', text:inArtifact ? 'Fotos antigas, certidões e documentos. As imagens são reduzidas automaticamente.' : 'Fotos antigas, certidões e documentos. Neste arquivo local cabem poucas imagens; na página compartilhada da família cabem muitas mais.'}))]),
       h('div', {class:'field full'}, [galBox])
     ]),
     sobre: grid([
@@ -1815,6 +1842,7 @@ function openForm(ctx){
   var confirmBox = h('div', {hidden:true});
 
   function close(){
+    if(!galSalvo) galNovosDrive.forEach(function(fid){ driveDelete(fid); });
     document.removeEventListener('keydown', esc); document.removeEventListener('paste', onPaste);
     if(ctx.inline){ window._profilePaste = null; renderProfile(); } else root.innerHTML = '';
   }
@@ -1845,9 +1873,11 @@ function openForm(ctx){
     p.pai = pv; p.mae = mv; p.notas = notas.value.trim(); p.fontes = fontes.value.trim(); p.conj = conj.slice();
     // aplica a galeria
     var keepG = {}; galDraft.forEach(function(it){ if(it.id) keepG[it.id] = 1; });
-    Object.keys(G).forEach(function(k){ if(G[k].pessoa === id && !keepG[k]) delete G[k]; });
+    Object.keys(G).forEach(function(k){ if(G[k].pessoa === id && !keepG[k]){ if(G[k].drive) driveDelete(G[k].drive); delete G[k]; } });
+    galSalvo = true;
     galDraft.forEach(function(it, i){
-      var body = {pessoa:id, img:it.img, legenda:(it.legenda || '').trim(), fonte:(it.fonte || '').trim(), ord:i};
+      var body = {pessoa:id, img:it.drive ? '' : it.img, legenda:(it.legenda || '').trim(), fonte:(it.fonte || '').trim(), ord:i};
+      if(it.drive) body.drive = it.drive;
       if(it.id && G[it.id] && stableSig(galBody(G[it.id])) === stableSig(body)) return;
       G[it.id || newGid()] = body;
     });
@@ -2114,7 +2144,7 @@ function mergeProfile(pp, gal){
   cur.ni = false;
   ['pai','mae'].forEach(function(k){ if(pp[k] && P[pp[k]] && pp[k] !== pp.id && !isAncestor(pp.id, pp[k])) cur[k] = pp[k]; });
   (pp.conj || []).forEach(function(c){ if(P[c] && c !== pp.id && cur.conj.indexOf(c) < 0) cur.conj.push(c); });
-  if(gal && typeof gal === 'object') Object.keys(gal).forEach(function(k){ var it = gal[k]; if(it && typeof it.img === 'string' && it.img.indexOf('data:image/') === 0){ G[G[k] ? newGid() : k] = {pessoa:pp.id, img:it.img, legenda:it.legenda || '', fonte:it.fonte || '', ord:it.ord || Date.now()}; } });
+  if(gal && typeof gal === 'object') Object.keys(gal).forEach(function(k){ var it = gal[k]; if(it && ((typeof it.img === 'string' && it.img.indexOf('data:image/') === 0) || (typeof it.drive === 'string' && it.drive))){ var ni = {pessoa:pp.id, img:it.drive ? '' : it.img, legenda:it.legenda || '', fonte:it.fonte || '', ord:it.ord || Date.now()}; if(it.drive) ni.drive = it.drive; G[G[k] ? newGid() : k] = ni; } });
   normalize(); fixFam(); afterChange('importar perfil de ' + cur.nome);
   toast((isNew ? 'Novo perfil adicionado: ' : 'Perfil atualizado: ') + cur.nome);
   setFocus(cur.id);
@@ -2306,7 +2336,8 @@ function loadGallery(){
 function cleanGallery(){
   Object.keys(G).forEach(function(k){
     var it = G[k];
-    if(!it || typeof it.img !== 'string' || it.img.indexOf('data:image/') !== 0 || !P[it.pessoa]) delete G[k];
+    var okImg = it && ((typeof it.drive === 'string' && it.drive) || (typeof it.img === 'string' && it.img.indexOf('data:image/') === 0));
+    if(!okImg || !P[it.pessoa]) delete G[k];
   });
 }
 function saveGalleryLocal(){ try{ localStorage.setItem(GAL_KEY, JSON.stringify(G)); return true; }catch(e){ return false; } }
@@ -2317,18 +2348,19 @@ function galleryOf(id){
 }
 function newGid(){ return 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 // reduz a imagem até caber com folga num documento compartilhado (< ~230 mil caracteres)
-function compressImage(file){
+function compressImage(file, opt){
+  opt = opt || {};
   return new Promise(function(res, rej){
     var url = URL.createObjectURL(file), img = new Image();
     img.onload = function(){
-      var max = 1400, q = 0.78, out = '';
+      var max = opt.max || 1400, q = opt.max ? 0.85 : 0.78, out = '', limite = opt.limite || 230000;
       for(var tries = 0; tries < 8; tries++){
         var sc = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
         var c = document.createElement('canvas');
         c.width = Math.round(img.naturalWidth * sc); c.height = Math.round(img.naturalHeight * sc);
         var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
         out = c.toDataURL('image/jpeg', q);
-        if(out.length < 230000) break;
+        if(out.length < limite) break;
         max = Math.round(max * 0.8); q = Math.max(0.55, q - 0.05);
       }
       URL.revokeObjectURL(url); res(out);
@@ -2364,7 +2396,7 @@ function personBody(p){
   var o = {}; Object.keys(p).forEach(function(k){ if(k !== 'id' && p[k] !== undefined) o[k] = p[k]; });
   o.conj = (p.conj || []).slice(); return o;
 }
-function galBody(it){ return {pessoa:it.pessoa, img:it.img, legenda:it.legenda || '', fonte:it.fonte || '', ord:it.ord || 0}; }
+function galBody(it){ var b = {pessoa:it.pessoa, img:it.drive ? '' : (it.img || ''), legenda:it.legenda || '', fonte:it.fonte || '', ord:it.ord || 0}; if(it.drive) b.drive = it.drive; return b; }
 function queueSync(){
   if(!shared.on || !shared.ready || shared.readOnly) return;
   diffInto('pessoas', P, personBody); diffInto('galeria', G, galBody);
@@ -2616,6 +2648,7 @@ function buildMenu(){
   item('Exportar GEDCOM', '.ged para FamilySearch, MyHeritage, Ancestry…', exportGedcom);
   item('Baixar pôster da árvore', 'imagem .png dos ancestrais de quem está em foco', function(){ makePoster(focusId); });
   if(!shared.readOnly) item('Importar arquivo', 'backup .json, perfil .json ou GEDCOM .ged', function(){ $('fileImport').click(); });
+  if(driveMode() && !shared.readOnly && typeof fb !== 'undefined' && fb.isAdmin && galleryInFirebase().length) item('Mover galeria para o Google Drive', galleryInFirebase().length + ' imagem(ns) hoje ocupam espaço no Firebase', migrateGalleryToDrive);
   menu.appendChild(h('div', {class:'menu-sep'}));
   var cb = h('input', {type:'checkbox', id:'privToggle'}); cb.checked = isPriv(); cb.disabled = privForced;
   cb.addEventListener('change', function(){ setPriv(cb.checked); });
@@ -3099,12 +3132,124 @@ function mergePeople(keepId, dropId){
   toast('Fichas unidas em ' + displayName(K) + '. Dá para desfazer.');
 }
 
+/* ================= Google Drive: imagens da galeria ================= */
+// Na nuvem, as imagens da galeria ficam no Google Drive de quem enviou (pasta "Árvore Genealógica (fotos)"),
+// compartilhadas como "qualquer pessoa com o link pode ver". No Firebase fica só o id do arquivo.
+var DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+var DRIVE_PASTA = 'Árvore Genealógica (fotos)';
+var drive = {token:'', exp:0, folder:'', conta:''};
+try{ var _dt = JSON.parse(sessionStorage.getItem('arvore-drive') || 'null'); if(_dt && _dt.exp > Date.now()){ drive.token = _dt.t; drive.exp = _dt.exp; drive.conta = _dt.c || ''; } }catch(e){}
+function driveMode(){ return typeof fb !== 'undefined' && !!fb.user && typeof shared !== 'undefined' && shared.on; }
+function driveReady(){ return !!drive.token && Date.now() < drive.exp; }
+function driveConnect(){
+  if(!/^https?:/.test(location.protocol)) return Promise.reject({code:'drive-arquivo-local'});
+  var prov = new firebase.auth.GoogleAuthProvider(); prov.addScope(DRIVE_SCOPE);
+  prov.setCustomParameters({login_hint:fb.email || ''});
+  var u = fb.user, isG = (u.providerData || []).some(function(x){ return x && x.providerId === 'google.com'; });
+  function keep(c){
+    if(!c || !c.accessToken) throw {code:'drive-sem-token'};
+    drive.token = c.accessToken; drive.exp = Date.now() + 55 * 60 * 1000; drive.folder = '';
+    try{ sessionStorage.setItem('arvore-drive', JSON.stringify({t:drive.token, exp:drive.exp, c:drive.conta})); }catch(e){}
+    return drive.token;
+  }
+  var pr = isG ? u.reauthenticateWithPopup(prov) : u.linkWithPopup(prov);
+  return pr.then(function(r){ drive.conta = (r.user && r.user.email) || ''; return keep(r.credential); },
+    function(e){ if(e && e.credential && e.credential.accessToken){ drive.conta = e.email || ''; return keep(e.credential); } throw e; });
+}
+function driveErrText(e){
+  var c = (e && e.code) || '';
+  if(c === 'auth/popup-blocked') return 'O navegador bloqueou a janela do Google. Permita pop-ups para este site e tente de novo.';
+  if(c === 'auth/popup-closed-by-user' || c === 'auth/cancelled-popup-request') return 'Conexão com o Google Drive cancelada.';
+  if(c === 'auth/user-mismatch') return 'Escolha a mesma conta Google com que você entra no app (' + fb.email + ').';
+  if(c === 'drive-arquivo-local') return 'O Google Drive só funciona pelo site (GitHub), não abrindo o arquivo direto do computador.';
+  if(c === 'drive-403') return 'O Google Drive recusou. Confira se a "Google Drive API" está ativada no projeto do Firebase.';
+  if(c === 'drive-expirou') return 'A conexão com o Google Drive expirou. Conecte de novo.';
+  return 'Não foi possível usar o Google Drive (' + (c || 'erro') + ').';
+}
+function dfetch(url, opt){
+  opt = opt || {}; opt.headers = Object.assign({Authorization:'Bearer ' + drive.token}, opt.headers || {});
+  return fetch(url, opt).then(function(r){
+    if(r.status === 401){ drive.token = ''; drive.exp = 0; try{ sessionStorage.removeItem('arvore-drive'); }catch(e){} throw {code:'drive-expirou'}; }
+    if(!r.ok) return r.text().then(function(t){ console.warn('drive', r.status, t); throw {code:'drive-' + r.status}; });
+    return r.status === 204 ? null : r.json();
+  });
+}
+var driveFolderP = null;
+function driveFolder(){
+  if(drive.folder) return Promise.resolve(drive.folder);
+  if(driveFolderP) return driveFolderP;
+  return driveFolderP = driveFolder0().then(function(id){ driveFolderP = null; return id; }, function(e){ driveFolderP = null; throw e; });
+}
+function driveFolder0(){
+  var q = encodeURIComponent("name='" + DRIVE_PASTA + "' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+  return dfetch('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)&spaces=drive').then(function(j){
+    if(j && j.files && j.files[0]) return j.files[0].id;
+    return dfetch('https://www.googleapis.com/drive/v3/files?fields=id', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:DRIVE_PASTA, mimeType:'application/vnd.google-apps.folder'})}).then(function(f){ return f.id; });
+  }).then(function(id){ drive.folder = id; return id; });
+}
+function dataUrlBlob(u){
+  var parts = u.split(','), mime = (parts[0].match(/:(.*?);/) || [])[1] || 'image/jpeg', bin = atob(parts[1]), arr = new Uint8Array(bin.length);
+  for(var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], {type:mime});
+}
+function driveUpload(dataUrl, nome){
+  return driveFolder().then(function(folder){
+    var fd = new FormData();
+    fd.append('metadata', new Blob([JSON.stringify({name:nome || ('imagem-' + Date.now() + '.jpg'), parents:[folder]})], {type:'application/json'}));
+    fd.append('file', dataUrlBlob(dataUrl));
+    return dfetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {method:'POST', body:fd});
+  }).then(function(f){
+    return dfetch('https://www.googleapis.com/drive/v3/files/' + f.id + '/permissions', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({role:'reader', type:'anyone'})}).then(function(){ return f.id; });
+  });
+}
+function driveDelete(id){ if(!id || !driveReady()) return Promise.resolve(); return dfetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(id), {method:'DELETE'}).catch(function(){}); }
+function driveImgUrl(id, w){ return 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(id) + '&sz=w' + (w || 800); }
+// <img> de um item da galeria (Drive ou imagem guardada no próprio cadastro)
+function galImg(it, w, attrs){
+  var el = h('img', Object.assign({alt:''}, attrs || {}));
+  setGalSrc(el, it, w);
+  return el;
+}
+function setGalSrc(el, it, w){
+  el.onerror = null;
+  if(it.drive){
+    el.src = driveImgUrl(it.drive, w);
+    el.onerror = function(){ el.onerror = null; el.src = 'https://lh3.googleusercontent.com/d/' + encodeURIComponent(it.drive) + '=w' + (w || 800); };
+  } else el.src = it.img || '';
+}
+// administrador: leva as imagens antigas (guardadas no Firebase) para o Google Drive
+function galleryInFirebase(){ return Object.keys(G).filter(function(k){ return G[k] && !G[k].drive && G[k].img; }); }
+function migrateGalleryToDrive(){
+  var ks = galleryInFirebase(); if(!ks.length){ toast('Nenhuma imagem para mover.'); return; }
+  function go(){
+    var feitos = 0, falhas = 0;
+    toast('Movendo ' + ks.length + ' imagem(ns) para o Google Drive…');
+    return ks.reduce(function(pr, k){
+      return pr.then(function(){
+        var it = G[k]; if(!it || it.drive || !it.img) return;
+        return driveUpload(it.img, 'galeria-' + k + '.jpg').then(function(id){
+          G[k] = Object.assign({}, it, {img:'', drive:id}); feitos++;
+          if(feitos % 5 === 0){ save(); toast(feitos + ' de ' + ks.length + '…'); }
+        }, function(e){ falhas++; console.warn('migrar', e); if(e && e.code === 'drive-expirou') throw e; });
+      });
+    }, Promise.resolve()).then(function(){
+      recordUndo('mover galeria para o Drive'); save(); renderAll();
+      toast(feitos + ' imagem(ns) movida(s) para o Google Drive' + (falhas ? ' · ' + falhas + ' falharam' : '') + '.');
+    }, function(e){ save(); toast(driveErrText(e)); });
+  }
+  if(driveReady()) return go();
+  dialog({title:'Mover galeria para o Google Drive', sub:ks.length + ' imagem(ns) da galeria estão guardadas no Firebase. Elas vão para a pasta "' + DRIVE_PASTA + '" no seu Google Drive e o Firebase passa a guardar só o link.',
+    actions:[{label:'Conectar e mover', primary:true, onclick:function(close){ driveConnect().then(function(){ close(); go(); }, function(e){ toast(driveErrText(e)); close(); }); return false; }}]});
+}
+
 /* ================= galeria: visualização ================= */
 function galleryEl(p){
   var items = galleryOf(p.id); if(!items.length) return null;
   var grid = h('div', {class:'gal-grid'});
   items.forEach(function(it, i){
-    grid.appendChild(h('button', {class:'gal-th', type:'button', title:it.legenda || 'Abrir imagem', onclick:function(){ openLightbox(items, i); }}, [h('img', {src:it.img, alt:it.legenda || 'Imagem de ' + displayName(p), loading:'lazy'})]));
+    grid.appendChild(h('button', {class:'gal-th', type:'button', title:it.legenda || 'Abrir imagem', onclick:function(){ openLightbox(items, i); }}, [galImg(it, 400, {alt:it.legenda || 'Imagem de ' + displayName(p), loading:'lazy'})]));
   });
   return grid;
 }
@@ -3112,7 +3257,7 @@ function openLightbox(items, idx){
   var root = $('modalRoot'); root.innerHTML = '';
   var img = h('img', {class:'lb-img', alt:''}), cap = h('div', {class:'lb-cap'});
   function show(){
-    var it = items[idx]; img.src = it.img; img.alt = it.legenda || '';
+    var it = items[idx]; setGalSrc(img, it, 1600); img.alt = it.legenda || '';
     cap.innerHTML = '';
     if(it.legenda) cap.appendChild(h('b', {text:it.legenda}));
     if(it.fonte) cap.appendChild(h('span', {text:'Fonte: ' + it.fonte}));
@@ -4212,6 +4357,8 @@ function runLinkSync(){
   if(linkSync.busy){ scheduleLinkSync(); return; }
   linkSync.busy = true;
   var pr = fetchDirectLinked().then(function(){
+    return autoImportLinked().catch(function(e){ console.warn('ligacao/familia', e); });
+  }).then(function(){
     try{ pullLinked(); }catch(e){ console.warn('ligacao/puxar', e); }
     try{ if(current === 'arvore') renderTree(); }catch(e){}
     return fb.isAdmin ? pushLinked() : null;
@@ -4227,6 +4374,14 @@ function fetchDirectLinked(force){
     var c = linkDirect[l.lid]; if(c && !force && Date.now() - c.em < (c.erro ? 600000 : 120000)) return;
     var col = fb.fs.collection('arvores').doc(other).collection('pessoas'), dados = {}, erro = '';
     var ids = (l.pares || []).map(function(par){ return par[sd.other]; }).filter(Boolean);
+    if(hasTree(other)){
+      jobs.push(col.get().then(function(snap){
+        var all = {}; snap.docs.forEach(function(d){ var o = d.data() || {}; o.id = d.id; all[d.id] = o; });
+        ids.forEach(function(id){ var o = all[id]; if(o){ dados[id] = linkBodyOf(o, true, true); dados[id].oficial = !!o.perfilDono; } });
+        linkDirect[l.lid] = {em:Date.now(), dados:dados, todos:all, erro:''};
+      }, function(e){ linkDirect[l.lid] = {em:Date.now(), dados:{}, erro:(e && e.code) || 'erro'}; }));
+      return;
+    }
     jobs.push(Promise.all(ids.map(function(id){
       return col.doc(id).get().then(function(d){ if(d.exists){ var o = d.data() || {}; dados[id] = linkBodyOf(o, true, true); dados[id].oficial = !!o.perfilDono; } }, function(e){ erro = (e && e.code) || 'erro'; });
     })).then(function(){ linkDirect[l.lid] = {em:Date.now(), dados:dados, erro:Object.keys(dados).length ? '' : erro}; }));
@@ -4263,13 +4418,89 @@ function pushLinked(){
         if(b.foto && b.foto.length > 120000) shrink.push(smallPhoto(b.foto, 240).then(function(u){ b.foto = u; }));
       });
       return Promise.all(shrink).then(function(){
-        if(JSON.stringify(map).length > 450000) Object.keys(map).forEach(function(k){ map[k].foto = ''; });
+        // limite do documento: fotos dos perfis oficiais primeiro, depois as outras enquanto couber
+        var size = JSON.stringify(map).length;
+        if(size > 450000){
+          var ks = Object.keys(map).sort(function(x, y){ return (map[y].oficial ? 1 : 0) - (map[x].oficial ? 1 : 0); }), total = 0;
+          ks.forEach(function(k){ total += (JSON.stringify(map[k]).length - map[k].foto.length); });
+          ks.forEach(function(k){ var f = map[k].foto.length; if(total + f > 450000) map[k].foto = ''; else total += f; });
+        }
         if(stableSig(map) === stableSig(l[sd.meuCampo] || {})) return;
         var upd = {}; upd[sd.meuCampo] = map;
         return fb.fs.collection('ligacoes').doc(l.lid).update(upd).then(function(){ l[sd.meuCampo] = map; });
       });
     });
   }, Promise.resolve());
+}
+/* ----- a família da pessoa ligada entra sozinha nesta árvore ----- */
+// Partindo de cada par ligado, percorre a árvore de lá (pais, cônjuges, filhos) e traz quem ainda não existe aqui.
+// Cada pessoa trazida vira um par da ligação, então foto e dados continuam sincronizados nas duas árvores.
+function firstTok(n){ return (nameTokens(n || '')[0] || '').toLowerCase(); }
+function autoImportLinked(){
+  if(!fb.isAdmin || shared.readOnly || !shared.ready) return Promise.resolve();
+  var jobs = [];
+  allLinks().forEach(function(l){
+    var cache = linkDirect[l.lid]; if(!cache || !cache.todos) return;
+    var R = cache.todos, sd = linkSide(l), map = {}, criados = [], novosPares = [];
+    (l.pares || []).forEach(function(par){ if(P[par[sd.mine]] && R[par[sd.other]]) map[par[sd.other]] = par[sd.mine]; });
+    // cópias feitas antes (mesmo se a gravação dos pares falhou)
+    Object.keys(P).forEach(function(k){ var o = P[k].origemLig; if(o && o.indexOf(l.lid + ':') === 0){ var rid = o.slice(l.lid.length + 1); if(R[rid] && !map[rid]){ map[rid] = k; novosPares.push(rid); } } });
+    var kidsOf = {}; Object.keys(R).forEach(function(k){ ['pai','mae'].forEach(function(f){ var x = R[k][f]; if(x){ (kidsOf[x] = kidsOf[x] || []).push(k); } }); });
+    var used = {}; Object.keys(map).forEach(function(r){ used[map[r]] = 1; });
+    function copy(rid){
+      var r = R[rid], id = newId(r.nome || 'pessoa');
+      var c = {id:id, ord:nextOrd++, pai:null, mae:null, conj:[], ni:!!r.ni, origemLig:l.lid + ':' + rid};
+      LINK_F.forEach(function(f){ c[f] = r[f] || ''; }); c.fontes = r.fontes || '';
+      P[id] = c; map[rid] = id; used[id] = 1; criados.push(rid); novosPares.push(rid);
+      return id;
+    }
+    function same(rid, lid){ return lid && P[lid] && !used[lid] && firstTok(R[rid].nome) === firstTok(P[lid].nome) && !(R[rid].sexo && P[lid].sexo && R[rid].sexo !== P[lid].sexo); }
+    function claim(rid, lid){ map[rid] = lid; used[lid] = 1; novosPares.push(rid); }
+    var queue = Object.keys(map), guard = 0;
+    while(queue.length && guard++ < 5000){
+      var r = queue.shift(), loc = map[r], rp = R[r], lp = P[loc]; if(!rp || !lp) continue;
+      ['pai','mae'].forEach(function(f){
+        var rr = rp[f]; if(!rr || !R[rr] || map[rr]) return;
+        if(lp[f]){ if(same(rr, lp[f])){ claim(rr, lp[f]); queue.push(rr); } return; }
+        lp[f] = copy(rr); queue.push(rr);
+      });
+      (rp.conj || []).forEach(function(rs){
+        if(!R[rs] || map[rs]) return;
+        var m = (lp.conj || []).filter(function(x){ return same(rs, x); })[0];
+        if(m) claim(rs, m); else { var nid = copy(rs); lp.conj.push(nid); P[nid].conj.push(loc); }
+        queue.push(rs);
+      });
+      (kidsOf[r] || []).forEach(function(rk){
+        if(map[rk]) return;
+        var m = Object.keys(P).filter(function(k){ return (P[k].pai === loc || P[k].mae === loc) && same(rk, k); })[0];
+        if(m) claim(rk, m); else { var nid = copy(rk); P[nid][rp.sexo === 'F' ? 'mae' : rp.sexo === 'M' ? 'pai' : (R[rk].mae === r ? 'mae' : 'pai')] = loc; }
+        queue.push(rk);
+      });
+    }
+    if(!criados.length && !novosPares.length) return;
+    // liga entre si as pessoas trazidas (pai, mãe e cônjuges de lá)
+    criados.forEach(function(rid){
+      var c = P[map[rid]], r = R[rid];
+      if(!c.pai && r.pai && map[r.pai]) c.pai = map[r.pai];
+      if(!c.mae && r.mae && map[r.mae]) c.mae = map[r.mae];
+      (r.conj || []).forEach(function(x){ var y = map[x]; if(y && c.conj.indexOf(y) < 0){ c.conj.push(y); if(P[y].conj.indexOf(c.id) < 0) P[y].conj.push(c.id); } });
+    });
+    if(criados.length){
+      normalize(); fixFam(); recordUndo('família trazida de ' + (sd.other === 'a' ? l.nomeA : l.nomeB)); save(); renderAll(true);
+      toast(criados.length + ' pessoa(s) trazida(s) da árvore "' + ((sd.other === 'a' ? l.nomeA : l.nomeB) || 'ligada') + '"');
+    }
+    // grava os novos pares na ligação
+    var have = {}; (l.pares || []).forEach(function(par){ have[par[sd.other]] = 1; });
+    var add = novosPares.filter(function(rid, i, a){ return !have[rid] && a.indexOf(rid) === i && map[rid]; }).map(function(rid){
+      var mine = map[rid], o = {}; o[sd.mine] = mine; o[sd.other] = rid;
+      o[sd.mine === 'a' ? 'nomeA' : 'nomeB'] = P[mine].nome; o[sd.other === 'a' ? 'nomeA' : 'nomeB'] = R[rid].nome || ''; return o;
+    });
+    if(add.length){
+      var pares = (l.pares || []).concat(add);
+      jobs.push(fb.fs.collection('ligacoes').doc(l.lid).update({pares:pares}).then(function(){ l.pares = pares; }));
+    }
+  });
+  return Promise.all(jobs);
 }
 // traz para cá o que mudou do outro lado (mesclagem em 3 vias com o que já tinha vindo antes)
 function pullLinked(){
