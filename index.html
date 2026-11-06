@@ -1792,11 +1792,15 @@ function relLabel(p, root){
   else if(root){ try{ var r = relSummary(root, p.id); if(r && r.txt) parts.push(r.txt.replace(/ de .*$/, '')); }catch(e){} }
   return s + (parts.length ? ' — ' + parts.join(' · ') : '');
 }
-function fillSelect(sel, keep){
+// tela inicial da aba Famílias: o seu próprio cadastro (perfil) e o seu casal
+function homeFamily(){ var r = rootId(); return (r && P[r]) ? r : (famHome && P[famHome] ? famHome : famStart); }
+function fillSelect(sel, keep, soDaArvore){
   var v = keep || sel.value; sel.innerHTML = '';
   var root = rootId();
-  Object.keys(P).map(get).sort(byName).forEach(function(p){ sel.appendChild(h('option', {value:p.id, text:relLabel(p, root)})); });
-  if(P[v]) sel.value = v;
+  // soDaArvore: só quem é desta árvore (fora os cadastros compartilhados por outra árvore e a família que veio com eles; o cônjuge fica)
+  Object.keys(P).map(get).filter(function(p){ return !soDaArvore || typeof publicOut !== 'function' || !publicOut(p.id); })
+    .sort(byName).forEach(function(p){ sel.appendChild(h('option', {value:p.id, text:relLabel(p, root)})); });
+  if(P[v] && [].some.call(sel.options, function(o){ return o.value === v; })) sel.value = v;
 }
 function renderRel(){
   var A = $('relA').value, B = $('relB').value, out = $('relOut'); out.innerHTML = '';
@@ -2630,7 +2634,7 @@ function renderFamilies(){
   var start = P[famStart];
   if(!start){ box.appendChild(h('div', {class:'panel fam-empty muted', text:'Cadastre uma pessoa para começar.'})); return; }
   // seletor
-  fillSelect($('famStart'), famStart);
+  fillSelect($('famStart'), famStart, true);
   var spFld = $('famSpouseFld'), spSel = $('famSpouse');
   if(start.conj.length > 1){
     spFld.hidden = false; spSel.innerHTML = '';
@@ -2638,7 +2642,7 @@ function renderFamilies(){
     spSel.value = famSpouse && start.conj.indexOf(famSpouse) >= 0 ? famSpouse : start.conj[0];
   } else spFld.hidden = true;
   $('famSetHome').hidden = famStart === famHome;
-  $('famHome').hidden = famStart === famHome;
+  $('famHome').hidden = famStart === homeFamily() && !famSpouse;
 
   var sp = get(start.conj.indexOf(famSpouse) >= 0 ? famSpouse : start.conj[0]);
   var pair = sortCouple(start, sp);
@@ -5301,7 +5305,7 @@ $('relSwap').addEventListener('click', function(){ var a = $('relA').value; $('r
 fillSelect($('relA')); fillSelect($('relB'));
 $('famStart').addEventListener('change', function(e){ famStart = e.target.value; famSpouse = null; save(); renderFamilies(); });
 $('famSpouse').addEventListener('change', function(e){ famSpouse = e.target.value; save(); renderFamilies(); });
-$('famHome').addEventListener('click', function(){ famStart = famHome; famSpouse = null; save(); renderFamilies(); });
+$('famHome').addEventListener('click', function(){ var home = homeFamily(); famStart = home; famHome = home; famSpouse = null; famOpen = {}; save(); renderFamilies(); try{ window.scrollTo({top:0, behavior:'smooth'}); }catch(e){ window.scrollTo(0, 0); } });
 $('famSetHome').addEventListener('click', function(){ famHome = famStart; save(); renderFamilies(); toast('Esta passa a ser a sua família principal'); });
 $('famOpenAll').addEventListener('click', famOpenAll);
 $('famCloseAll').addEventListener('click', function(){ famOpen = {}; save(); renderFamilies(); });
