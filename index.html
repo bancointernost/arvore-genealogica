@@ -733,7 +733,7 @@ function normalize(){
     var p = P[id]; p.id = id; p.conj = Array.isArray(p.conj) ? p.conj.filter(function(c){return P[c] && c !== id;}) : [];
     if(p.pai && !P[p.pai]) p.pai = null; if(p.mae && !P[p.mae]) p.mae = null;
     if(typeof p.ord !== 'number') p.ord = 0;
-    ['nome','sexo','notas','nasc','falec','local','foto','whats','tel2','insta','face','tiktok','link','apelido','profissao','cidade','email','fontes','convite','codigoLigacao'].forEach(function(k){ if(typeof p[k] !== 'string') p[k] = ''; });
+    ['nome','sexo','notas','nasc','falec','local','foto','whats','tel2','insta','face','tiktok','link','apelido','profissao','cidade','email','fontes','convite','codigoLigacao','perfilDono'].forEach(function(k){ if(typeof p[k] !== 'string') p[k] = ''; });
     if(p.foto && p.foto.indexOf('data:image/') !== 0) p.foto = '';
   });
   // cônjuges simétricos
@@ -1576,6 +1576,8 @@ function openForm(ctx){
     rmBtn.hidden = !has; adjust.hidden = !fotoImg;
     pickBtn.textContent = has ? 'Trocar foto' : 'Escolher foto';
     hint.textContent = fotoImg ? 'Arraste a foto dentro do círculo para posicionar. Aproxime pelo controle, pela roda do mouse ou com dois dedos.' : 'Clique no círculo, arraste uma imagem para ele ou cole (Ctrl+V).';
+    var of = editing && !editing.perfilDono && typeof officialSource === 'function' ? officialSource(editing.id) : '';
+    if(of) hint.textContent += ' A foto vem do perfil oficial de ' + firstName(editing) + ' em "' + of + '" e é atualizada por lá.';
     if(fotoImg){
       clamp();
       var sd = side(), c = cv.getContext('2d');
@@ -1916,7 +1918,18 @@ function setupSearch(){
 var ME_KEY = 'arvore-thais-eu';
 var meId = null;
 try{ meId = localStorage.getItem(ME_KEY); }catch(e){}
-function setMe(id){ meId = id; try{ if(id) localStorage.setItem(ME_KEY, id); else localStorage.removeItem(ME_KEY); }catch(e){} }
+function setMeLocal(id){ meId = id; try{ if(id) localStorage.setItem(ME_KEY, id); else localStorage.removeItem(ME_KEY); }catch(e){} }
+// na nuvem, "este cadastro sou eu" fica gravado no próprio cadastro (perfilDono = e-mail da conta): é o perfil oficial da pessoa
+function cloudEmail(){ return (typeof fb !== 'undefined' && fb.email && typeof shared !== 'undefined' && shared.on && !shared.readOnly) ? fb.email : ''; }
+function myClaim(){ var e = cloudEmail(); if(!e || !P) return null; return Object.keys(P).filter(function(k){ return P[k].perfilDono === e; })[0] || null; }
+function claimProfile(id){
+  var e = cloudEmail(); if(!e || !P) return false;
+  var changed = false;
+  Object.keys(P).forEach(function(k){ if(P[k].perfilDono === e && k !== id){ P[k].perfilDono = ''; changed = true; } });
+  if(id && P[id] && !P[id].perfilDono){ P[id].perfilDono = e; changed = true; }
+  return changed;
+}
+function setMe(id){ setMeLocal(id); if(claimProfile(id)) save(); }
 var PROFILE_FIELDS = [
   ['foto','Foto'], ['nasc','Nascimento'], ['local','Natural de'], ['cidade','Mora em'], ['profissao','Profissão'],
   ['whats','WhatsApp'], ['redes','Uma rede social'], ['pais','Pai ou mãe'], ['notas','Sobre mim']
@@ -1938,8 +1951,9 @@ function joinNames(ids){
 }
 function renderProfile(){
   var box = $('profileBox'); if(!box) return; box.innerHTML = '';
+  var mc = myClaim(); if(mc && mc !== meId) setMeLocal(mc);
   var me = get(meId);
-  if(!me){ if(meId) setMe(null); renderWhoPick(box); return; }
+  if(!me){ if(meId) setMeLocal(null); renderWhoPick(box); return; }
 
   var side = h('div', {class:'pcard-side'});
   var card = h('div', {class:'panel me-head'}, [
@@ -3828,6 +3842,12 @@ function afterTreeReady(){
   var fo = qs('foco');
   if(fo && P[fo]){ focusId = fo; showView('arvore'); renderTree(); try{ history.replaceState(null, '', location.pathname + '?arvore=' + encodeURIComponent(tree.id)); }catch(e){} }
   cleanupLinkCodes();
+  // cadastro escolhido antes em "Meu perfil" (só neste navegador) passa a valer como perfil oficial na árvore
+  if(!myClaim() && meId && P[meId] && !P[meId].perfilDono && fb.role !== 'leitor'){
+    var nm = norm((fb.user.displayName || '').split(' ')[0] || ''), pm = norm(firstName(P[meId]) || '');
+    if(nm && pm && nm === pm && claimProfile(meId)) save();
+  }
+  var mc0 = myClaim(); if(mc0) setMeLocal(mc0);
   scheduleLinkSync();
   var v = null; try{ v = JSON.parse(sessionStorage.getItem('vincularPessoa') || 'null'); }catch(e){}
   if(!v || v.arvore !== tree.id) return;
@@ -4088,7 +4108,8 @@ function linkSide(l){ var mine = l.arvoreA === tree.id ? 'a' : 'b'; return {mine
 function hashStr(t){ var x = 5381; for(var i = 0; i < t.length; i++) x = ((x << 5) + x + t.charCodeAt(i)) | 0; return (x >>> 0).toString(36) + ':' + t.length; }
 function linkBodyOf(p, comFoto){
   var b = {}; LINK_F.forEach(function(f){ if(f === 'foto') return; b[f] = p[f] || ''; });
-  b.foto = comFoto && p.foto && p.foto.length < 250000 ? p.foto : '';
+  b.foto = comFoto && p.foto && p.foto.length < 400000 ? p.foto : '';
+  b.oficial = !!p.perfilDono;
   return b;
 }
 // versão comparável (foto vira um resumo) — é o que fica guardado em ligPrev
@@ -4129,9 +4150,17 @@ function pullLinked(){
       if(!p || !rb) return;
       var rc = linkCmp(rb), prev = null;
       try{ prev = p.ligPrev ? JSON.parse(p.ligPrev) : null; }catch(e){ prev = null; }
-      if(prev && stableSig(prev) === stableSig(rc)) return;   // nada novo do outro lado
-      var trocou = false;
+      // foto: vale a do perfil oficial (o cadastro que a própria pessoa assumiu como "sou eu");
+      // se o oficial não tem foto, usa a que existir. Nunca fica sem foto se algum lado tiver.
+      var lOf = !!p.perfilDono, rOf = !!rb.oficial, fotoTrocou = false;
+      if(rb.foto && p.foto !== rb.foto && ((rOf && !lOf) || !p.foto)){ p.foto = rb.foto; fotoTrocou = true; }
+      if(prev && stableSig(prev) === stableSig(rc)){            // nada novo do outro lado
+        if(fotoTrocou){ p.ligPrev = JSON.stringify(rc); mudou.push({p:p, trocou:true}); }
+        return;
+      }
+      var trocou = fotoTrocou;
       LINK_F.forEach(function(f){
+        if(f === 'foto' && (lOf || rOf)) return;               // já resolvido pela regra do perfil oficial
         var rv = rc[f], lv = localCmp(p, f);
         if(!rv || rv === lv) return;
         var pode;
@@ -4156,6 +4185,11 @@ function linkRemote(l){
   var full = allLinks().filter(function(x){ return x.lid === l.lid; })[0]; if(!full) return null;
   var sd = linkSide(full); return (full[sd.outroCampo] || {})[l.pessoa] || null;
 }
+function officialSource(pid){
+  var o = '';
+  linksOf(pid).forEach(function(l){ var rb = linkRemote(l); if(!o && rb && rb.oficial && rb.foto) o = l.nomeArvore || 'outra árvore'; });
+  return o;
+}
 function openLinkCompare(pid, l){
   var p = P[pid], rb = linkRemote(l);
   if(!rb){ dialog({title:'Dados de ' + displayName(p), sub:'A outra árvore ainda não enviou os dados. Eles chegam quando um administrador de "' + (l.nomeArvore || 'outra árvore') + '" abrir a árvore com esta versão do app.', cancel:'Fechar'}); return; }
@@ -4163,7 +4197,7 @@ function openLinkCompare(pid, l){
   LINK_F.forEach(function(f){
     var lv = f === 'foto' ? p.foto : (p[f] || ''), rv = f === 'foto' ? rb.foto : (rb[f] || '');
     if(!rv || lv === rv) return;
-    var cb = h('input', {type:'checkbox', id:'cmp_' + f}); cb.checked = !lv;
+    var cb = h('input', {type:'checkbox', id:'cmp_' + f}); cb.checked = !lv || (f === 'foto' && rb.oficial && !p.perfilDono);
     picks.push({f:f, cb:cb, v:rv});
     function show(v){
       if(f === 'foto') return v ? h('img', {src:v, alt:'', class:'cmp-foto'}) : h('span', {class:'muted', text:'—'});
