@@ -836,7 +836,7 @@ function save(){
     localStorage.setItem(STORE_KEY, JSON.stringify({versao:3, foco:focusId, familiaPrincipal:famHome, familiaInicio:famStart, familiaConjuge:famSpouse, familiaAbertas:famOpen, salvoEm:new Date().toISOString(), pessoas:P}));
   }catch(e){ ok = false; }
   okG = saveGalleryLocal();
-  if(shared.on){ queueSync(); updateStatus(); if(typeof schedulePublicSync === 'function') schedulePublicSync(); if(typeof scheduleLinkSync === 'function' && !linkSync.busy) scheduleLinkSync(); return true; }
+  if(shared.on){ if(typeof schedulePrefs === 'function') schedulePrefs(); queueSync(); updateStatus(); if(typeof schedulePublicSync === 'function') schedulePublicSync(); if(typeof scheduleLinkSync === 'function' && !linkSync.busy) scheduleLinkSync(); return true; }
   el.textContent = !ok ? 'Espaço do navegador cheio — use Arquivo › Exportar' : !okG ? 'Galeria sem espaço neste navegador' : 'Salvo neste navegador';
   return ok && okG;
 }
@@ -1164,6 +1164,7 @@ var treeFull = false;
 try{ treeFull = localStorage.getItem('arvore-thais-modo') === 'completo'; }catch(e){}
 function setTreeMode(full){
   treeFull = full; try{ localStorage.setItem('arvore-thais-modo', full ? 'completo' : 'compacto'); }catch(e){}
+  if(typeof schedulePrefs === 'function') schedulePrefs();
   renderTree();
 }
 function renderTree(){
@@ -2469,6 +2470,7 @@ function hidePrivate(p){ return isPriv() && isLiving(p); }
 function yearOnly(s){ var d = parseDateBR(s); return d ? String(d.y) : s; }
 function setPriv(on){
   privMode = on; try{ localStorage.setItem('arvore-thais-privado', on ? '1' : '0'); }catch(e){}
+  if(typeof schedulePrefs === 'function') schedulePrefs();
   renderAll(); toast(on ? 'Dados privados de pessoas vivas ocultos' : 'Dados privados visíveis');
 }
 
@@ -2902,6 +2904,15 @@ function makePoster(id){
   var root = P[id]; if(!root){ toast('Escolha uma pessoa na árvore primeiro.'); return; }
   toast('Montando o pôster…');
   var GENS = 4, W = 2600, H = 1700, top = 210, bottom = 90, left = 70, boxW = 540, boxH = 128;
+  // irmãos: os mais velhos acima de quem está em foco, os mais novos abaixo
+  var sibs = [], sibH = 112, sibGap = 16;   // pôster mostra só os ancestrais (irmãos ficaram de fora a pedido)
+  var rb = birthYear(root);
+  function olderThanRoot(s){ var y = birthYear(s); if(y && rb) return y < rb || (y === rb && (s.ord || 0) < (root.ord || 0)); return (s.ord || 0) < (root.ord || 0); }
+  var acima = sibs.filter(olderThanRoot), abaixo = sibs.filter(function(s){ return !olderThanRoot(s); });
+  function byAge(a, b){ var ya = birthYear(a) || 9999, yb = birthYear(b) || 9999; return ya - yb || (a.ord || 0) - (b.ord || 0); }
+  acima.sort(byAge); abaixo.sort(byAge);
+  var lado = Math.max(acima.length, abaixo.length);
+  H = Math.max(H, top + bottom + boxH + 2 * lado * (sibH + sibGap) + 60);
   var colGap = (W - left * 2 - boxW * GENS) / (GENS - 1);
   var slots = Math.pow(2, GENS - 1), slotH = (H - top - bottom) / slots;
   var nodes = [];
@@ -2909,6 +2920,7 @@ function makePoster(id){
   walk(root, 0, 0);
   function pos(g, idx){ var span = slots / Math.pow(2, g); return {x:left + g * (boxW + colGap), y:top + (idx + 0.5) * span * slotH - boxH / 2}; }
   var imgs = {}, waits = [];
+  sibs.forEach(function(sp){ if(sp.foto){ var im = new Image(); waits.push(new Promise(function(r){ im.onload = r; im.onerror = r; })); im.src = sp.foto; imgs[sp.id] = im; } });
   nodes.forEach(function(n){ if(n.p.foto && !hidePrivate(n.p) || n.p.foto){ var im = new Image(); waits.push(new Promise(function(r){ im.onload = r; im.onerror = r; })); im.src = n.p.foto; imgs[n.p.id] = im; } });
   var fontsReady = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
   Promise.all(waits.concat([fontsReady])).then(function(){
@@ -2920,7 +2932,7 @@ function makePoster(id){
     x.fillStyle = '#0e7c72'; x.font = '700 26px "Source Sans 3", Arial, sans-serif'; x.fillText('GENEALOGIA · ANCESTRAIS', left, 78);
     x.fillStyle = '#0b3d5c'; x.font = '700 64px Merriweather, Georgia, serif'; x.fillText('Árvore de ' + displayName(root), left, 150);
     x.fillStyle = '#6b7684'; x.font = '400 26px "Source Sans 3", Arial, sans-serif';
-    var gl = ['Em foco', 'Pais', 'Avós', 'Bisavós'];
+    var gl = [sibs.length ? 'Em foco e irmãos' : 'Em foco', 'Pais', 'Avós', 'Bisavós'];
     for(var gg = 0; gg < GENS; gg++){ x.fillText(gl[gg].toUpperCase(), left + gg * (boxW + colGap), top - 18); }
     // linhas
     x.strokeStyle = '#c3ced9'; x.lineWidth = 3;
@@ -2936,27 +2948,39 @@ function makePoster(id){
     });
     function rr(px, py, w, h2, r){ x.beginPath(); x.moveTo(px + r, py); x.arcTo(px + w, py, px + w, py + h2, r); x.arcTo(px + w, py + h2, px, py + h2, r); x.arcTo(px, py + h2, px, py, r); x.arcTo(px, py, px + w, py, r); x.closePath(); }
     function wrap(t, maxW, font){ x.font = font; var ws = t.split(' '), ls = [], l = ''; ws.forEach(function(w){ var tt = l ? l + ' ' + w : w; if(x.measureText(tt).width > maxW && l){ ls.push(l); l = w; } else l = tt; }); if(l) ls.push(l); return ls.slice(0, 2); }
-    nodes.forEach(function(n){
-      var p = n.p, q = pos(n.g, n.idx), focus = n.g === 0;
+    function drawBox(p, q, focus, bh){
+      var k = bh / boxH;
       var ring = p.sexo === 'F' ? '#c2578a' : p.sexo === 'M' ? '#3a7fbf' : '#9aa3ad';
       var fill = p.sexo === 'F' ? '#fbdfe9' : p.sexo === 'M' ? '#d7e9fb' : '#e9ebee';
       x.save(); x.shadowColor = 'rgba(20,40,60,.12)'; x.shadowBlur = 14; x.shadowOffsetY = 4;
-      rr(q.x, q.y, boxW, boxH, 16); x.fillStyle = focus ? '#e8f5e6' : '#ffffff'; x.fill(); x.restore();
-      rr(q.x, q.y, boxW, boxH, 16); x.lineWidth = focus ? 5 : 2; x.strokeStyle = focus ? '#3f9142' : '#dde3ea'; x.stroke();
-      var cx = q.x + 66, cy = q.y + boxH / 2, r = 44;
+      rr(q.x, q.y, boxW, bh, 16); x.fillStyle = focus ? '#e8f5e6' : '#ffffff'; x.fill(); x.restore();
+      rr(q.x, q.y, boxW, bh, 16); x.lineWidth = focus ? 5 : 2; x.strokeStyle = focus ? '#3f9142' : '#dde3ea'; x.stroke();
+      var cx = q.x + 66 * k, cy = q.y + bh / 2, r = 44 * k;
       x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.fillStyle = fill; x.fill();
       if(imgs[p.id] && imgs[p.id].naturalWidth){ x.save(); x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.clip(); x.drawImage(imgs[p.id], cx - r, cy - r, r * 2, r * 2); x.restore(); }
-      else { x.fillStyle = ring; x.font = '700 38px Merriweather, Georgia, serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(initial(p), cx, cy + 2); x.textAlign = 'left'; x.textBaseline = 'alphabetic'; }
+      else { x.fillStyle = ring; x.font = '700 ' + Math.round(38 * k) + 'px Merriweather, Georgia, serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(initial(p), cx, cy + 2); x.textAlign = 'left'; x.textBaseline = 'alphabetic'; }
       x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.lineWidth = 4; x.strokeStyle = ring; x.stroke();
-      var tx = q.x + 128, tw = boxW - 150;
-      var lines = wrap(displayName(p), tw, '700 30px Merriweather, Georgia, serif');
-      var yr0 = years(p), blockH = lines.length * 36 + (yr0 ? 30 : 0);
-      var y0 = q.y + (boxH - blockH) / 2 + 28;
+      var tx = q.x + 128 * k, tw = boxW - 150 * k, lh = 36 * k;
+      var lines = wrap(displayName(p), tw, '700 ' + Math.round(30 * k) + 'px Merriweather, Georgia, serif');
+      var yr0 = years(p), blockH = lines.length * lh + (yr0 ? 30 * k : 0);
+      var y0 = q.y + (bh - blockH) / 2 + 28 * k;
       x.fillStyle = p.ni ? '#6b7684' : '#0b3d5c';
-      lines.forEach(function(l, i){ x.fillText(l, tx, y0 + i * 36); });
+      lines.forEach(function(l, i){ x.fillText(l, tx, y0 + i * lh); });
       var yr = years(p);
-      if(yr){ x.fillStyle = '#6b7684'; x.font = '400 24px "Source Sans 3", Arial, sans-serif'; x.fillText(yr, tx, y0 + lines.length * 36 + 2); }
-    });
+      if(yr){ x.fillStyle = '#6b7684'; x.font = '400 ' + Math.round(24 * k) + 'px "Source Sans 3", Arial, sans-serif'; x.fillText(yr, tx, y0 + lines.length * lh + 2); }
+    }
+    // irmãos (com a linha que os liga aos mesmos pais)
+    if(sibs.length){
+      var f0 = pos(0, 0), mx0 = f0.x + boxW + colGap / 2, ys = [f0.y + boxH / 2], sq = [];
+      acima.slice().reverse().forEach(function(sp, i){ sq.push({p:sp, y:f0.y - (i + 1) * (sibH + sibGap) + (boxH - sibH) / 2 - 6}); });
+      abaixo.forEach(function(sp, i){ sq.push({p:sp, y:f0.y + boxH + sibGap + i * (sibH + sibGap) + 6 - (boxH - sibH) / 2 + (boxH - sibH) / 2}); });
+      x.strokeStyle = '#c3ced9'; x.lineWidth = 3;
+      sq.forEach(function(it){ var yy = it.y + sibH / 2; ys.push(yy); x.beginPath(); x.moveTo(f0.x + boxW, yy); x.lineTo(mx0, yy); x.stroke(); });
+      x.beginPath(); x.moveTo(mx0, Math.min.apply(null, ys)); x.lineTo(mx0, Math.max.apply(null, ys)); x.stroke();
+      x.beginPath(); x.moveTo(f0.x + boxW, f0.y + boxH / 2); x.lineTo(mx0, f0.y + boxH / 2); x.stroke();
+      sq.forEach(function(it){ drawBox(it.p, {x:f0.x, y:it.y}, false, sibH); });
+    }
+    nodes.forEach(function(n){ drawBox(n.p, pos(n.g, n.idx), n.g === 0, boxH); });
     x.fillStyle = '#6b7684'; x.font = '400 22px "Source Sans 3", Arial, sans-serif';
     x.fillText('Gerado em ' + new Date().toLocaleDateString('pt-BR') + ' · ' + Object.keys(P).length + ' pessoas cadastradas na árvore', left, H - 40);
     c.toBlob(function(blob){
@@ -3040,7 +3064,7 @@ function renderBirthdays(){
 /* ================= revisar: duplicados e inconsistências ================= */
 var DISMISS_KEY = 'arvore-thais-nao-duplicados';
 function dismissed(){ try{ return JSON.parse(localStorage.getItem(DISMISS_KEY) || '{}'); }catch(e){ return {}; } }
-function dismissPair(a, b){ var d = dismissed(); d[[a, b].sort().join('|')] = 1; try{ localStorage.setItem(DISMISS_KEY, JSON.stringify(d)); }catch(e){} }
+function dismissPair(a, b){ var d = dismissed(); d[[a, b].sort().join('|')] = 1; try{ localStorage.setItem(DISMISS_KEY, JSON.stringify(d)); }catch(e){} if(typeof schedulePrefs === 'function') schedulePrefs(); }
 var STOP = {da:1, das:1, de:1, 'do':1, dos:1, e:1};
 function nameTokens(n){ return norm(n).split(/\s+/).filter(function(t){ return t && !STOP[t]; }); }
 function lev(a, b){
@@ -3605,8 +3629,10 @@ function afterLogin(u){
   fb.user = u; fb.email = (u.email || '').toLowerCase();
   renderAuth('loading', 'Olá, ' + (u.displayName || fb.email).split(' ')[0] + '! Buscando suas árvores…');
   var wanted = qs('arvore'), entered = false;
+  loadPrefs().then(function(){ decide(); });
+  setTimeout(function(){ if(!prefs.loaded){ prefs.loaded = true; prefs.data = prefs.data || {}; decide(); } }, 2500);
   function decide(){
-    if(entered || tree.creating || !tree.gotMine || !tree.gotReqs) return;
+    if(entered || tree.creating || !tree.gotMine || !tree.gotReqs || !prefs.loaded) return;
     var mineIds = tree.mine.map(function(a){ return a.arvore; });
     var dl = null; try{ dl = JSON.parse(sessionStorage.getItem('depoisLogin') || 'null'); sessionStorage.removeItem('depoisLogin'); }catch(e){}
     if(dl && dl.acao === 'join' && dl.arvore){
@@ -3620,7 +3646,7 @@ function afterLogin(u){
       renderJoin(wanted); return;
     }
     if(!qs('escolher')){
-      var last = null; try{ last = localStorage.getItem('arvore-ultima-' + fb.email); }catch(e){}
+      var last = (prefs.data && prefs.data.ultima) || null; if(!last){ try{ last = localStorage.getItem('arvore-ultima-' + fb.email); }catch(e){} }
       if(last && mineIds.indexOf(last) >= 0){ entered = true; openTree(last); return; }
       if(mineIds.length === 1){ entered = true; openTree(mineIds[0]); return; }
     }
@@ -4065,6 +4091,53 @@ function startPublic(code){
   });
 }
 // guarda o que fazer depois do login e vai para a tela de entrada
+/* ================= preferências da conta (valem em qualquer navegador) ================= */
+// usuarios/{uid}: tema, modo da árvore, privacidade, última árvore e, por árvore: foco, família principal, famílias abertas, pares "pessoas diferentes"
+var prefs = {loaded:false, data:null, timer:null, applying:false};
+function prefsRef(){ return fb.fs.collection('usuarios').doc(fb.user.uid); }
+function loadPrefs(){
+  if(!fb.user) return Promise.resolve();
+  return prefsRef().get().then(function(d){ prefs.data = (d.exists && d.data()) || {}; }, function(){ prefs.data = {}; prefs.noRules = true; })
+    .then(function(){ prefs.loaded = true; applyGlobalPrefs(); });
+}
+function applyGlobalPrefs(){
+  var d = prefs.data || {}; prefs.applying = true;
+  try{
+    if(d.tema === 'dark' || d.tema === 'light'){ var b = document.querySelector('[data-theme-opt="' + d.tema + '"]'); if(b && document.documentElement.getAttribute('data-theme') !== d.tema){ document.documentElement.setAttribute('data-theme', d.tema); document.querySelectorAll('[data-theme-opt]').forEach(function(x){ x.setAttribute('aria-checked', x.dataset.themeOpt === d.tema ? 'true' : 'false'); }); try{ localStorage.setItem('arvore-thais-tema', d.tema); }catch(e){} } }
+    if(typeof d.modo === 'string'){ treeFull = d.modo === 'completo'; try{ localStorage.setItem('arvore-thais-modo', d.modo); }catch(e){} }
+    if(typeof d.privado === 'boolean' && !privForced){ privMode = d.privado; try{ localStorage.setItem('arvore-thais-privado', d.privado ? '1' : '0'); }catch(e){} }
+  }catch(e){}
+  prefs.applying = false;
+}
+function applyTreePrefs(){
+  if(!prefs.data || !tree.id) return;
+  var t = (prefs.data.arvores || {})[tree.id]; if(!t) return;
+  prefs.applying = true;
+  if(t.foco && P[t.foco]) focusId = t.foco;
+  if(t.familiaPrincipal && P[t.familiaPrincipal]) famHome = t.familiaPrincipal;
+  if(t.familiaInicio && P[t.familiaInicio]) famStart = t.familiaInicio;
+  famSpouse = t.familiaConjuge && P[t.familiaConjuge] ? t.familiaConjuge : null;
+  if(t.familiaAbertas && typeof t.familiaAbertas === 'object') famOpen = Object.assign({}, t.familiaAbertas);
+  if(t.diferentes && typeof t.diferentes === 'object'){ try{ var dd = dismissed(); Object.keys(t.diferentes).forEach(function(k){ dd[k] = 1; }); localStorage.setItem(DISMISS_KEY, JSON.stringify(dd)); }catch(e){} }
+  fixFam(); dupCache = null;
+  prefs.applying = false;
+  renderAll();
+}
+function schedulePrefs(){
+  if(!prefs.loaded || prefs.applying || prefs.noRules || typeof fb === 'undefined' || !fb.user) return;
+  clearTimeout(prefs.timer); prefs.timer = setTimeout(savePrefs, 2500);
+}
+function savePrefs(){
+  var o = {tema:document.documentElement.getAttribute('data-theme') || 'light', modo:treeFull ? 'completo' : 'compacto', privado:!!privMode,
+    atualizadoEm:firebase.firestore.FieldValue.serverTimestamp()};
+  if(typeof tree !== 'undefined' && tree.id && shared.ready){
+    o.ultima = tree.id;
+    var t = {foco:focusId || '', familiaPrincipal:famHome || '', familiaInicio:famStart || '', familiaConjuge:famSpouse || '', familiaAbertas:famOpen || {}, diferentes:dismissed()};
+    o.arvores = {}; o.arvores[tree.id] = t;
+    prefs.data = prefs.data || {}; prefs.data.arvores = prefs.data.arvores || {}; prefs.data.arvores[tree.id] = t; prefs.data.ultima = tree.id;
+  }
+  prefsRef().set(o, {merge:true}).catch(function(e){ if(e && e.code === 'permission-denied') prefs.noRules = true; });
+}
 function afterLoginGo(acao, criar){
   try{ sessionStorage.setItem('depoisLogin', JSON.stringify({acao:acao, arvore:pub.viewTree, nome:pub.viewName})); if(criar) sessionStorage.setItem('abrirCadastro', '1'); }catch(e){}
   location.href = location.pathname;
@@ -4163,6 +4236,7 @@ function changeEmail(novo, opt, errEl){
 }
 /* ----- convite pessoal (a partir do cadastro da pessoa) ----- */
 function afterTreeReady(){
+  applyTreePrefs();
   var fo = qs('foco');
   if(fo && P[fo]){ focusId = fo; showView('arvore'); renderTree(); try{ history.replaceState(null, '', location.pathname + '?arvore=' + encodeURIComponent(tree.id)); }catch(e){} }
   cleanupLinkCodes();
@@ -4800,7 +4874,7 @@ $('famCloseAll').addEventListener('click', function(){ famOpen = {}; save(); ren
   apply(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
   document.querySelectorAll('[data-theme-opt]').forEach(function(b){ b.addEventListener('click', function(){
     var t = b.dataset.themeOpt; try{ localStorage.setItem(KEY, t); }catch(e){}
-    apply(t); toast(t === 'dark' ? 'Tema escuro' : 'Tema claro');
+    apply(t); toast(t === 'dark' ? 'Tema escuro' : 'Tema claro'); if(typeof schedulePrefs === 'function') schedulePrefs();
   }); });
 })();
 $('treeFull').addEventListener('click', function(){ setTreeMode(!treeFull); });
