@@ -370,6 +370,11 @@ ol.path b{color:var(--head)}
 .age-out.warn{color:var(--danger);background:var(--danger-pale);border-color:transparent}
 /* topo: menu, desfazer, avisos */
 .menu-wrap{position:relative}
+.pf-view{position:relative}
+.pf-edit-top{position:absolute;top:18px;right:20px}
+.pf-view input:disabled,.pf-view select:disabled,.pf-view textarea:disabled{opacity:1;color:var(--text);cursor:default;-webkit-text-fill-color:var(--text)}
+.pf-view .btn:disabled{display:none}
+.pf-view .photo-drop,.pf-view .photo-wrap{pointer-events:none}
 .lp-couples{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
 .lp-couple{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card)}
 .lp-couple:hover{border-color:var(--leaf);background:var(--leaf-pale)}
@@ -1546,9 +1551,18 @@ function renderList(){
 function norm(s){ return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
 
 /* ---------- render: parentesco ---------- */
+// opção com o parentesco em relação a mim: "Sebastião Mareco da Silva — pai"
+function relLabel(p, root){
+  var s = label(p).replace(/ \([^)]*\)$/, '');
+  var parts = [];
+  if(root && p.id === root) parts.push('você');
+  else if(root){ try{ var r = relSummary(root, p.id); if(r && r.txt) parts.push(r.txt.replace(/ de .*$/, '')); }catch(e){} }
+  return s + (parts.length ? ' — ' + parts.join(' · ') : '');
+}
 function fillSelect(sel, keep){
   var v = keep || sel.value; sel.innerHTML = '';
-  Object.keys(P).map(get).sort(byName).forEach(function(p){ sel.appendChild(h('option', {value:p.id, text:label(p)})); });
+  var root = rootId();
+  Object.keys(P).map(get).sort(byName).forEach(function(p){ sel.appendChild(h('option', {value:p.id, text:relLabel(p, root)})); });
   if(P[v]) sel.value = v;
 }
 function renderRel(){
@@ -2044,7 +2058,22 @@ function openForm(ctx){
       ])
     ])
   ]);
-  if(ctx.inline){ window._profileDirty = false; form.addEventListener('input', function(){ window._profileDirty = true; }); root.appendChild(form); return; }
+  if(ctx.inline){
+    window._profileDirty = false; form.addEventListener('input', function(){ window._profileDirty = true; }); root.appendChild(form);
+    if(ctx.view){
+      // mesma tela do perfil, mas só para ver: tudo travado até clicar em Editar
+      form.classList.add('pf-view');
+      form.querySelectorAll('input, select, textarea, button').forEach(function(el){ if(!el.closest('.ftabs')) el.disabled = true; if((el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && !el.value) el.placeholder = '—'; });
+      var t = form.querySelector('#' + px + '_title'); if(t) t.textContent = 'Meu perfil';
+      var sb = form.querySelector('.sub'); if(sb) sb.textContent = 'É assim que a família vê seus dados. Para alterar, clique em Editar.';
+      var foot = form.querySelector('.mfoot'); foot.innerHTML = '';
+      if(!shared.readOnly) foot.appendChild(h('div', {class:'right'}, [h('button', {class:'btn primary', type:'button', text:'✎ Editar', onclick:function(){ profEditing = true; renderProfile(); }})]));
+      var head = h('button', {class:'btn primary sm pf-edit-top', type:'button', text:'✎ Editar', onclick:function(){ profEditing = true; renderProfile(); }});
+      if(!shared.readOnly) form.insertBefore(head, form.firstChild);
+      window._profilePaste = null;
+    }
+    return;
+  }
   form.addEventListener('input', function(){ dirty = true; }); form.addEventListener('change', function(){ dirty = true; });
   var scrim = h('div', {class:'scrim'}, [form]);
   root.appendChild(scrim);
@@ -2200,28 +2229,7 @@ function renderProfile(){
 
   var main = h('div', {});
   box.appendChild(h('div', {class:'profile'}, [side, main]));
-  if(profEditing && !shared.readOnly){ openForm({edit:me.id, inline:main}); return; }
-  // visualização: só altera depois de clicar em Editar
-  var view = h('div', {class:'panel profile-view'});
-  view.appendChild(h('div', {class:'pv-head'}, [
-    h('div', {}, [h('h2', {text:'Meu perfil'}), h('div', {class:'muted', text:'É assim que a família vê seus dados na árvore.'})]),
-    shared.readOnly ? null : h('button', {class:'btn primary', type:'button', text:'✎ Editar', onclick:function(){ profEditing = true; renderProfile(); }})
-  ]));
-  function sec(t, rows){
-    var dl = h('dl', {class:'facts'});
-    rows.forEach(function(r){ if(r[1]){ dl.appendChild(h('dt', {text:r[0]})); dl.appendChild(h('dd', {text:r[1]})); } });
-    if(!dl.children.length) return;
-    view.appendChild(h('h3', {text:t})); view.appendChild(dl);
-  }
-  var sx = me.sexo === 'M' ? 'Masculino' : me.sexo === 'F' ? 'Feminino' : '';
-  sec('Dados', [['Nome', displayName(me)], ['Apelido', me.apelido], ['Sexo', sx], ['Nascimento', me.nasc], ['Idade', ageText(me)],
-    ['Falecimento', me.falec], ['Natural de', me.local], ['Mora em', me.cidade], ['Profissão', me.profissao]]);
-  sec('Contato', [['WhatsApp', me.whats], ['Outro telefone', me.tel2], ['E-mail', me.email], ['Instagram', me.insta], ['Facebook', me.face], ['TikTok', me.tiktok], ['Site', me.link]]);
-  if(me.notas){ view.appendChild(h('h3', {text:'Sobre mim'})); view.appendChild(h('p', {class:'pv-notes', text:me.notas})); }
-  if(me.fontes){ view.appendChild(h('h3', {text:'Fontes'})); view.appendChild(h('p', {class:'pv-notes', text:me.fontes})); }
-  var gal = typeof galleryEl === 'function' ? galleryEl(me) : null;
-  if(gal){ view.appendChild(h('h3', {text:'Galeria (' + galleryOf(me.id).length + ')'})); view.appendChild(gal); }
-  main.appendChild(view);
+  openForm({edit:me.id, inline:main, view:!(profEditing && !shared.readOnly)});
 }
 var profEditing = false;
 function renderWhoPick(box){
@@ -4001,9 +4009,12 @@ function renderMembers(){
 // publicos/{codigo}/pessoas/*  cópia SEM dados privados, mantida pelo administrador
 var pub = {code:'', fotos:false, ativo:false, sigs:null, timer:null, busy:false, again:false, view:''};
 function publicLink(code){ return location.origin + location.pathname + '?publico=' + code; }
+// a página pública mostra só quem é desta árvore: cadastros compartilhados por outra árvore (e a família que veio com eles) ficam de fora
+function publicOut(id){ var p = P[id]; if(!p) return true; if(p.origemLig) return true; return typeof managedBy === 'function' && !!managedBy(id); }
 function publicBody(p){
   var vivo = isLiving(p);
-  var b = {nome:p.nome || '', ni:!!p.ni, sexo:p.sexo || '', pai:p.pai || null, mae:p.mae || null, conj:(p.conj || []).slice(), ord:p.ord || 0,
+  function ok(x){ return x && !publicOut(x) ? x : null; }
+  var b = {nome:p.nome || '', ni:!!p.ni, sexo:p.sexo || '', pai:ok(p.pai), mae:ok(p.mae), conj:(p.conj || []).filter(function(c){ return !publicOut(c); }), ord:p.ord || 0,
     apelido:p.apelido || '', falec:p.falec || '', nasc:p.nasc ? (vivo ? yearOnly(p.nasc) : p.nasc) : ''};
   if(!vivo){ b.local = p.local || ''; b.profissao = p.profissao || ''; b.notas = p.notas || ''; b.fontes = p.fontes || ''; }
   b.foto = (p.foto && (!vivo || pub.fotos)) ? p.foto : '';
@@ -4021,7 +4032,7 @@ function publicSync(force){
   var load = (pub.sigs && !force) ? Promise.resolve() : col.get().then(function(s){ pub.sigs = {}; s.docs.forEach(function(d){ pub.sigs[d.id] = stableSig(d.data()); }); });
   return load.then(function(){
     var ops = [], want = {};
-    Object.keys(P).forEach(function(id){ var b = publicBody(P[id]), j = stableSig(b); want[id] = 1; if(pub.sigs[id] !== j) ops.push({id:id, b:b, j:j}); });
+    Object.keys(P).forEach(function(id){ if(publicOut(id)) return; var b = publicBody(P[id]), j = stableSig(b); want[id] = 1; if(pub.sigs[id] !== j) ops.push({id:id, b:b, j:j}); });
     Object.keys(pub.sigs).forEach(function(id){ if(!want[id]) ops.push({id:id, del:true}); });
     if(!ops.length) return;
     var chunks = []; for(var i = 0; i < ops.length; i += 400) chunks.push(ops.slice(i, i + 400));
@@ -4066,7 +4077,7 @@ function publicPanel(){
   var box = h('section', {class:'panel', style:'margin-top:16px'}, [h('h3', {text:'Página pública'})]);
   var cb = h('input', {type:'checkbox', id:'pubFotos'}); cb.checked = pub.fotos;
   var fotosLbl = h('label', {class:'check', for:'pubFotos'}, [cb, 'Mostrar fotos de pessoas vivas']);
-  box.appendChild(h('p', {class:'muted', style:'margin:0 0 10px', text:'Qualquer pessoa com o link vê a árvore, sem precisar de login. A página pública nunca mostra telefones, e-mails, redes sociais, endereço, profissão, observações nem datas completas de pessoas vivas (só o ano). Quem quiser pode pedir para participar ou criar a própria conta.'}));
+  box.appendChild(h('p', {class:'muted', style:'margin:0 0 10px', text:'Qualquer pessoa com o link vê a árvore, sem precisar de login. Pessoas que outra árvore compartilhou com você (e a família delas) não aparecem: elas só entram na página pública da árvore de origem. A página pública nunca mostra telefones, e-mails, redes sociais, endereço, profissão, observações nem datas completas de pessoas vivas (só o ano). Quem quiser pode pedir para participar ou criar a própria conta.'}));
   if(pub.code && pub.ativo){
     var link = publicLink(pub.code), inp = h('input', {type:'text', id:'pubLink', value:link, readonly:true, 'aria-label':'Link público'});
     var msg = 'Veja a árvore genealógica "' + tree.nome + '": ' + link;
