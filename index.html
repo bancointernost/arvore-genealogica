@@ -490,6 +490,18 @@ body.read-only .fg-person.vazio, body.read-only button.empty-slot, body.read-onl
 .acc-trees{display:grid;gap:4px;margin-top:6px}
 .acc-tree{display:flex;justify-content:space-between;gap:10px;font-size:.88rem;border-bottom:1px solid var(--border);padding:5px 0}
 .acc-tree small{color:var(--soft)}
+.link-sec{padding:4px 0 10px}
+.link-sec + .link-sec{border-top:1px dashed var(--border);padding-top:10px}
+.link-sec p{margin:0 0 8px}
+.link-box{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding:8px 11px;border-radius:8px;background:var(--blue-pale);border:1px solid var(--border);font-size:.86rem}
+.link-origin{color:var(--teal)}
+.link-rows{display:grid;gap:8px;margin-bottom:12px}
+.link-row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1.2fr);gap:10px;align-items:center;border:1px solid var(--border);border-radius:9px;padding:8px 10px}
+.link-row > div{display:flex;flex-direction:column;min-width:0}
+.link-row small{color:var(--soft);font-size:.76rem}
+.link-row select{padding:7px 9px;border:1px solid var(--border);border-radius:8px;background:var(--bg);min-width:0;width:100%}
+.link-eq{color:var(--soft);font-weight:700}
+@media (max-width:560px){.link-row{grid-template-columns:1fr}.link-eq{display:none}}
 .gbtn{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;padding:12px 16px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#1f1f1f;font-weight:600;font-size:1rem;box-shadow:0 1px 2px rgba(0,0,0,.06);transition:box-shadow .15s,border-color .15s}
 .gbtn:hover{border-color:#9aa3ad;box-shadow:0 4px 14px -6px rgba(0,0,0,.25)}
 .user-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);border-radius:24px;padding:3px 4px 3px 4px;background:var(--card)}
@@ -818,7 +830,7 @@ function normalize(){
     var p = P[id]; p.id = id; p.conj = Array.isArray(p.conj) ? p.conj.filter(function(c){return P[c] && c !== id;}) : [];
     if(p.pai && !P[p.pai]) p.pai = null; if(p.mae && !P[p.mae]) p.mae = null;
     if(typeof p.ord !== 'number') p.ord = 0;
-    ['nome','sexo','notas','nasc','falec','local','foto','whats','tel2','insta','face','tiktok','link','apelido','profissao','cidade','email','fontes','convite'].forEach(function(k){ if(typeof p[k] !== 'string') p[k] = ''; });
+    ['nome','sexo','notas','nasc','falec','local','foto','whats','tel2','insta','face','tiktok','link','apelido','profissao','cidade','email','fontes','convite','codigoLigacao'].forEach(function(k){ if(typeof p[k] !== 'string') p[k] = ''; });
     if(p.foto && p.foto.indexOf('data:image/') !== 0) p.foto = '';
   });
   // cônjuges simétricos
@@ -1306,6 +1318,7 @@ function renderFocusPanel(f){
       el.appendChild(h('div', {class:'rel-thais'}, [h('b', {text:displayName(f)}), ' é ' + rs.txt + ' de ' + P[ROOT].nome + (rs.kind === 'sangue' ? grau : rs.kind === 'conjuge' ? '' : rs.kind === 'afinidade' ? ' (afinidade' + grau + ')' : ' (por casamento, sem vínculo jurídico)')]));
     }
   }
+  if(typeof linksOf === 'function') linksOf(f.id).forEach(function(l){ el.appendChild(linkBox(l)); });
   if(f.notas) el.appendChild(h('div', {class:'notas', text:f.notas}));
   if(f.fontes) el.appendChild(h('div', {class:'fontes'}, [h('b', {text:'Fontes: '}), f.fontes]));
   var gal = galleryEl(f);
@@ -1318,7 +1331,8 @@ function renderFocusPanel(f){
     h('button', {class:'btn sm', type:'button', text:'+ Irmão(ã)', onclick:function(){ openForm({siblingOf:f.id}); }}),
     h('button', {class:'btn sm', type:'button', text:'Grupo familiar', onclick:function(){ openFamilyOf(f.id); }}),
     h('button', {class:'btn sm', type:'button', text:'Parentesco…', onclick:function(){ $('relA').value = ROOT; $('relB').value = f.id; showView('parentesco'); renderRel(); }}),
-    (typeof fb !== 'undefined' && fb.isAdmin && !f.ni && isLiving(f)) ? h('button', {class:'btn sm primary', type:'button', text:f.convite ? '✉ Convite enviado' : '✉ Enviar convite', onclick:function(){ openPersonInvite(f.id); }}) : null
+    (typeof fb !== 'undefined' && fb.isAdmin && !f.ni && isLiving(f)) ? h('button', {class:'btn sm primary', type:'button', text:f.convite ? '✉ Convite enviado' : '✉ Enviar convite', onclick:function(){ openPersonInvite(f.id); }}) : null,
+    (typeof fb !== 'undefined' && fb.isAdmin && !f.ni) ? h('button', {class:'btn sm', type:'button', text:'🔗 Ligar árvores', onclick:function(){ openLinkDialog(f.id); }}) : null
   ]));
 }
 function renderFamilyPanel(f){
@@ -1487,6 +1501,7 @@ function openForm(ctx){
   conjAdd.addEventListener('change', function(){ if(conjAdd.value){ conj.push(conjAdd.value); drawConj(); } });
   drawConj();
   var notas = h('textarea', {id:px+'_notas'}); notas.value = d.notas;
+  var lkCodeIn = h('input', {type:'text', id:px+'_lkcode', placeholder:'ex.: ABC-123', autocomplete:'off', autocapitalize:'characters', spellcheck:'false'});
   var fontes = h('textarea', {id:px+'_fontes', placeholder:'Ex.: certidão de nascimento; conversa com a tia Joana em 2026; registro da paróquia…', style:'min-height:56px'}); fontes.value = d.fontes || '';
   // ----- galeria (alterações só valem ao salvar) -----
   var galDraft = editing ? galleryOf(editing.id).map(function(it){ return {id:it.id, img:it.img, legenda:it.legenda || '', fonte:it.fonte || ''}; }) : [];
@@ -1684,7 +1699,9 @@ function openForm(ctx){
       ctx.addAs === 'pai' ? null : h('div', {class:'field'}, [h('label', {for:px+'_pai', text:'Pai'}), pai]),
       ctx.addAs === 'mae' ? null : h('div', {class:'field'}, [h('label', {for:px+'_mae', text:'Mãe'}), mae]),
       h('div', {class:'field full'}, [h('label', {for:px+'_conj', text:'Cônjuge(s)'}), conjChips, conjAdd]),
-      ctx.addAs ? h('div', {class:'field full muted', text:'Esta pessoa será ligada como ' + (ctx.addAs === 'pai' ? 'pai' : 'mãe') + ' de ' + displayName(P[ctx.of]) + '.'}) : null
+      ctx.addAs ? h('div', {class:'field full muted', text:'Esta pessoa será ligada como ' + (ctx.addAs === 'pai' ? 'pai' : 'mãe') + ' de ' + displayName(P[ctx.of]) + '.'}) : null,
+      (typeof fb !== 'undefined' && fb.isAdmin && typeof tree !== 'undefined' && tree.id) ? h('div', {class:'field full'}, [h('label', {for:px+'_lkcode', text:'Código de ligação com outra árvore'}), lkCodeIn,
+        h('div', {class:'photo-hint', text:'Recebeu um código de outra árvore com esta pessoa ou a família dela? Digite aqui: ao salvar, as árvores são ligadas.'})]) : null
     ]),
     galeria: grid([
       h('div', {class:'field full'}, [h('div', {class:'row'}, [h('button', {class:'btn sm', type:'button', text:'+ Adicionar imagens', onclick:function(){ galIn.click(); }}), galIn]),
@@ -1774,6 +1791,7 @@ function openForm(ctx){
     }
     close();
     toast(ctx.inline ? 'Perfil salvo' : editing ? 'Alterações salvas' : displayName(p) + ' cadastrado(a)');
+    if(lkCodeIn.value.trim()){ var lkv = lkCodeIn.value; setTimeout(function(){ redeemLink(lkv, id, null); }, 80); }
     if(ctx.asMe){ setMe(id); showView('perfil'); return; }
     if(!editing && !ctx.addAs && !ctx.childOf && !ctx.spouseOf && !ctx.siblingOf) setFocus(id);
   }
@@ -2018,6 +2036,9 @@ function personBlock(p, role, depth, side){
     h('span', {}, [ role ? h('span', {class:'rl', text:role}) : null, h('span', {class:'nm', text:displayName(p)}), y ? h('span', {class:'yr', text:y}) : null ])
   ]));
   var ctm = contactsEl(p, true); if(ctm) block.appendChild(ctm);
+  if(typeof linksOf === 'function') linksOf(p.id).forEach(function(l){
+    block.appendChild(h('button', {class:'origin link-origin', type:'button', title:'Abrir na árvore ' + (l.nomeArvore || ''), onclick:function(){ openOther(l); }}, ['🔗 ' + firstName(p) + ' em ' + (l.nomeArvore || 'outra árvore') + ' ↗']));
+  });
   if(others){
     var names = p.conj.map(get).map(displayName).join(', ');
     block.appendChild(h('div', {class:'fg-also', text:'Casamentos: ' + names}));
@@ -3185,7 +3206,7 @@ function startFirebase(){
 //   pedidos/{id}__{uid}          pedidos de acesso {arvore, uid, email, nome, foto, mensagem, nomeArvore}
 var tree = {id:null, nome:'', mine:[], myReqs:[], gotMine:false, gotReqs:false};
 function qs(k){ var m = new RegExp('[?&]' + k + '=([^&#]*)').exec(location.search); return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : ''; }
-function goTree(id){ try{ localStorage.setItem('arvore-ultima-' + fb.email, id); }catch(e){} location.href = location.pathname + '?arvore=' + encodeURIComponent(id); }
+function goTree(id, foco, nome){ try{ localStorage.setItem('arvore-ultima-' + fb.email, id); }catch(e){} location.href = location.pathname + '?arvore=' + encodeURIComponent(id) + (foco ? '&foco=' + encodeURIComponent(foco) : '') + (nome ? '&nome=' + encodeURIComponent(nome) : ''); }
 function goPicker(){ location.href = location.pathname + '?escolher=1'; }
 var CODE_ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function newCode(){ var c = ''; var r = new Uint32Array(6); (window.crypto || window.msCrypto).getRandomValues(r); for(var i = 0; i < 6; i++) c += CODE_ABC[r[i] % CODE_ABC.length]; return c; }
@@ -3419,6 +3440,7 @@ function openTree(id){
     }
     if(n && n !== tree.nome){ tree.nome = n; document.title = n; if(h1) h1.textContent = n; }
   }, function(){}));
+  watchLinks();
   attachDb(scopedDb(id), fb.role === 'leitor');
 }
 
@@ -3536,6 +3558,7 @@ function renderMembers(){
   });
   box.appendChild(reqs);
 
+  var lk = linksPanel(); if(lk) box.appendChild(lk);
   var sw = swapsPanel(); if(sw) box.appendChild(sw);
   var mem = h('section', {class:'panel', style:'margin-top:16px'}, [h('h3', {text:'Membros (' + membersState.membros.length + ')'})]);
   membersState.membros.slice().sort(function(a, b){ return (a.nome || a.email).localeCompare(b.nome || b.email, 'pt-BR'); }).forEach(function(m){
@@ -3788,6 +3811,9 @@ function changeEmail(novo, opt, errEl){
 }
 /* ----- convite pessoal (a partir do cadastro da pessoa) ----- */
 function afterTreeReady(){
+  var fo = qs('foco');
+  if(fo && P[fo]){ focusId = fo; showView('arvore'); renderTree(); try{ history.replaceState(null, '', location.pathname + '?arvore=' + encodeURIComponent(tree.id)); }catch(e){} }
+  cleanupLinkCodes();
   var v = null; try{ v = JSON.parse(sessionStorage.getItem('vincularPessoa') || 'null'); }catch(e){}
   if(!v || v.arvore !== tree.id) return;
   try{ sessionStorage.removeItem('vincularPessoa'); }catch(e){}
@@ -3841,6 +3867,217 @@ function openPersonInvite(pid){
     }, chooser);
   } else chooser();
   dialog({title:'Convidar ' + displayName(p), body:[body], cancel:'Fechar'});
+}
+
+/* ================= ligar árvores ================= */
+// ligacoes/{A__B} {arvoreA (de onde veio o código), arvoreB (quem usou), nomeA, nomeB, codigo, pares:[{a, b, nomeA, nomeB}]}
+var linkSnaps = {a:[], b:[]}, linkCleaned = {};
+function linkId(x, y){ return [x, y].sort().join('__'); }
+function allLinks(){ return (typeof tree !== 'undefined' && tree.links) || []; }
+function linksOf(pid){
+  var out = [];
+  allLinks().forEach(function(l){
+    var mine = l.arvoreA === tree.id ? 'a' : 'b', other = mine === 'a' ? 'b' : 'a';
+    (l.pares || []).forEach(function(p){
+      if(p[mine] === pid) out.push({lid:l.lid, arvore:other === 'a' ? l.arvoreA : l.arvoreB, nomeArvore:other === 'a' ? l.nomeA : l.nomeB,
+        pessoa:p[other], pessoaNome:other === 'a' ? p.nomeA : p.nomeB});
+    });
+  });
+  return out;
+}
+function hasTree(id){ return (tree.mine || []).some(function(a){ return a.arvore === id; }); }
+function openOther(l){ goTree(l.arvore, l.pessoa, l.nomeArvore); }
+function watchLinks(){
+  tree.links = [];
+  function upd(){
+    var seen = {}; tree.links = linkSnaps.a.concat(linkSnaps.b).filter(function(l){ if(seen[l.lid]) return false; seen[l.lid] = 1; return true; });
+    cleanupLinkCodes();
+    if(shared.ready) renderAll(true);
+  }
+  fb.unsub.push(fb.fs.collection('ligacoes').where('arvoreA', '==', tree.id).onSnapshot(function(s){ linkSnaps.a = s.docs.map(function(d){ return Object.assign({lid:d.id}, d.data()); }); upd(); }, function(){}));
+  fb.unsub.push(fb.fs.collection('ligacoes').where('arvoreB', '==', tree.id).onSnapshot(function(s){ linkSnaps.b = s.docs.map(function(d){ return Object.assign({lid:d.id}, d.data()); }); upd(); }, function(){}));
+}
+// o código já foi usado: o administrador desta árvore apaga para ninguém mais usar
+function cleanupLinkCodes(){
+  if(!fb.isAdmin || !shared.ready) return;
+  var changed = false;
+  allLinks().forEach(function(l){
+    if(!l.codigo || linkCleaned[l.codigo]) return;
+    var owner = Object.keys(P).filter(function(k){ return P[k].codigoLigacao === l.codigo; })[0];
+    if(!owner) return;
+    linkCleaned[l.codigo] = 1;
+    fb.fs.collection('convites').doc(l.codigo).delete().catch(function(){});
+    P[owner].codigoLigacao = ''; changed = true;
+  });
+  if(changed) save();
+}
+function genLinkCode(pid, papel){
+  var p = P[pid], code = newCode(), old = p.codigoLigacao;
+  function snap(x){ return x ? {id:x.id, nome:x.nome, sexo:x.sexo || ''} : null; }
+  var bt = fb.fs.batch();
+  bt.set(fb.fs.collection('convites').doc(code), {tipo:'ligacao', arvore:tree.id, nomeArvore:tree.nome, papel:papel,
+    pessoa:pid, pessoaNome:p.nome, pessoaSexo:p.sexo || '',
+    conjuges:p.conj.map(get).filter(Boolean).map(snap), pais:[get(p.pai), get(p.mae)].filter(Boolean).map(snap),
+    criadoPor:fb.email, criadoPorVerificado:!!fb.user.emailVerified, criadoEm:firebase.firestore.FieldValue.serverTimestamp()});
+  if(old) bt.delete(fb.fs.collection('convites').doc(old));
+  return bt.commit().then(function(){ P[pid].codigoLigacao = code; save(); return code; });
+}
+function openLinkDialog(pid, preset){
+  var p = P[pid]; if(!p) return;
+  var body = h('div', {class:'link-dlg'});
+  // 1) tenho um código
+  var inp = h('input', {type:'text', id:'lkCode', placeholder:'Código (ex.: ABC-123)', value:preset || '', autocomplete:'off', autocapitalize:'characters', spellcheck:'false'});
+  var err = h('div', {class:'auth-err', role:'alert', hidden:true});
+  body.appendChild(h('div', {class:'link-sec'}, [
+    h('h3', {class:'acc-h3', text:'Recebi um código de outra árvore'}),
+    h('p', {class:'muted', text:'Alguém da família gerou um código na árvore dele(a)? Digite aqui para ligar ' + displayName(p) + ' e a família dele(a) com aquela árvore.'}),
+    h('div', {class:'invite-row'}, [inp, h('button', {class:'btn primary', type:'button', text:'Ligar', onclick:function(){ err.hidden = true; redeemLink(inp.value, pid, err); }})]), err
+  ]));
+  // 2) gerar código
+  var gen = h('div', {class:'link-sec'});
+  function drawGen(){
+    gen.innerHTML = '';
+    gen.appendChild(h('h3', {class:'acc-h3', text:'Gerar código para a outra árvore'}));
+    var code = P[pid].codigoLigacao;
+    if(code){
+      var sp = get(p.conj[0]);
+      var msg = 'Vamos ligar nossas árvores genealógicas! Na sua árvore, abra o cadastro de ' + (sp ? displayName(sp) + ' ou de ' : '') + displayName(p) + ', clique em "🔗 Ligar árvores" e digite o código ' + fmtCode(code) + ' (árvore "' + tree.nome + '").';
+      gen.appendChild(h('div', {class:'invite-code'}, [h('span', {class:'lbl', text:'Código de ' + firstName(p)}), h('b', {text:fmtCode(code)})]));
+      var wa = h('a', {class:'ct wa', href:'https://wa.me/?text=' + encodeURIComponent(msg), target:'_blank', rel:'noopener noreferrer'}); wa.innerHTML = ICONS.wa; wa.appendChild(h('span', {text:'Enviar no WhatsApp'}));
+      gen.appendChild(h('div', {class:'actions'}, [
+        h('button', {class:'btn sm primary', type:'button', text:'Copiar mensagem', onclick:function(){ try{ navigator.clipboard.writeText(msg).then(function(){ toast('Mensagem copiada'); }, function(){ toast(fmtCode(code)); }); }catch(e){ toast(fmtCode(code)); } }}),
+        wa,
+        h('button', {class:'btn sm', type:'button', text:'Gerar outro', onclick:function(){ P[pid].codigoLigacao = ''; drawGen(); }})
+      ]));
+      gen.appendChild(h('p', {class:'auth-fine', text:'O código vale uma vez: quando a outra árvore usar, ele é apagado. Quem usar ganha acesso à sua árvore com o papel escolhido.'}));
+    } else {
+      var sel = h('select', {id:'lkPapel', 'aria-label':'Acesso de quem usar o código'}, [h('option', {value:'leitor', text:'Quem usar o código pode ver esta árvore'}), h('option', {value:'editor', text:'Quem usar o código pode ver e editar esta árvore'})]);
+      gen.appendChild(h('p', {class:'muted', text:'Gere um código e mande para quem tem outra árvore com ' + displayName(p) + ' ou a família dele(a). Quando ele digitar o código lá, as duas árvores ficam ligadas.'}));
+      gen.appendChild(h('div', {class:'member-add', style:'margin-top:0;padding-top:0;border-top:0'}, [sel, h('button', {class:'btn sm primary', type:'button', text:'Gerar código', onclick:function(){
+        genLinkCode(pid, sel.value).then(drawGen, function(e){ toast('Não foi possível gerar (' + (e.code || 'erro') + '). Confira se as regras novas foram publicadas.'); });
+      }})]));
+    }
+  }
+  drawGen(); body.appendChild(gen);
+  // 3) ligações atuais
+  var ls = linksOf(pid);
+  if(ls.length){
+    var cur = h('div', {class:'link-sec'}, [h('h3', {class:'acc-h3', text:'Já ligado(a)'})]);
+    ls.forEach(function(l){ cur.appendChild(linkBox(l)); });
+    body.appendChild(cur);
+  }
+  dialog({title:'🔗 Ligar árvores · ' + displayName(p), body:[body], cancel:'Fechar'});
+  if(preset) setTimeout(function(){ redeemLink(preset, pid, err); }, 50);
+}
+function linkBox(l){
+  return h('div', {class:'link-box'}, [
+    h('span', {}, ['🔗 Também na árvore ', h('b', {text:l.nomeArvore || 'outra árvore'}), l.pessoaNome ? ' como ' : '', l.pessoaNome ? h('b', {text:l.pessoaNome}) : null]),
+    h('button', {class:'btn sm', type:'button', text:hasTree(l.arvore) ? 'Abrir ↗' : 'Pedir acesso', onclick:function(){ openOther(l); }})
+  ]);
+}
+function redeemLink(raw, qid, errEl){
+  function err(t){ if(errEl){ errEl.hidden = false; errEl.textContent = t; } else toast(t); }
+  var code = cleanCode(raw);
+  if(code.length !== 6){ err('O código tem 6 letras/números, como ABC-123.'); return; }
+  fb.fs.collection('convites').doc(code).get().then(function(d){
+    if(!d.exists){ err('Código não encontrado ou já usado. Peça um novo para quem gerou.'); return; }
+    var c = d.data();
+    if(c.tipo !== 'ligacao'){ err('Este é um código de convite para entrar numa árvore, não de ligação. Use-o na tela inicial, em "Recebeu um convite?".'); return; }
+    if(c.arvore === tree.id){ err('Este código é desta mesma árvore. Ele deve ser usado na outra árvore.'); return; }
+    confirmLink(c, code, qid);
+  }, function(e){ err('Não consegui conferir o código (' + (e.code || 'erro') + ').'); });
+}
+function confirmLink(c, code, qid){
+  var Q = P[qid];
+  var A = [{id:c.pessoa, nome:c.pessoaNome, sexo:c.pessoaSexo, rel:''}]
+    .concat((c.conjuges || []).map(function(x){ return Object.assign({rel:'cônjuge de ' + c.pessoaNome.split(' ')[0]}, x); }))
+    .concat((c.pais || []).map(function(x){ return Object.assign({rel:(x.sexo === 'F' ? 'mãe' : 'pai') + ' de ' + c.pessoaNome.split(' ')[0]}, x); }));
+  var near = [Q].concat(Q.conj.map(get), [get(Q.pai), get(Q.mae)]).filter(Boolean);
+  var used = {};
+  function first(n){ return nameTokens(n)[0] || ''; }
+  function ok(a, b){ return !used[b.id] && !(a.sexo && b.sexo && a.sexo !== b.sexo); }
+  function match(a){
+    var na = norm(a.nome), fa = first(a.nome), m;
+    m = near.filter(function(b){ return ok(a, b) && norm(b.nome) === na; })[0]
+     || near.filter(function(b){ return ok(a, b) && first(b.nome) === fa; })[0]
+     || Object.keys(P).map(get).filter(function(b){ return ok(a, b) && norm(b.nome) === na; })[0];
+    if(m) used[m.id] = 1;
+    return m ? m.id : '';
+  }
+  var rows = A.map(function(a){ return {a:a, b:match(a)}; });
+  if(!rows.some(function(r){ return r.b; })) rows[0].b = qid;
+  var people = Object.keys(P).map(get).sort(byName);
+  var table = h('div', {class:'link-rows'});
+  rows.forEach(function(r, i){
+    var sel = h('select', {id:'lkRow' + i, 'aria-label':'Quem é ' + r.a.nome + ' na sua árvore'}, [h('option', {value:'', text:'— não está na minha árvore —'})]
+      .concat(near.map(function(b){ return h('option', {value:b.id, text:'★ ' + label(b)}); }))
+      .concat(people.filter(function(b){ return near.indexOf(b) < 0; }).map(function(b){ return h('option', {value:b.id, text:label(b)}); })));
+    sel.value = r.b || ''; sel.addEventListener('change', function(){ r.b = sel.value; });
+    table.appendChild(h('div', {class:'link-row'}, [
+      h('div', {}, [h('b', {text:r.a.nome}), h('small', {text:(r.a.rel ? r.a.rel + ' · ' : '') + 'em "' + c.nomeArvore + '"'})]),
+      h('span', {class:'link-eq', text:'='}), sel
+    ]));
+  });
+  var already = hasTree(c.arvore);
+  var cJoin = h('input', {type:'checkbox', id:'lkJoin'}); cJoin.checked = !already;
+  var cGrant = h('input', {type:'checkbox', id:'lkGrant'}); cGrant.checked = true;
+  var grantTo = c.criadoPor && c.criadoPor !== fb.email ? c.criadoPor : '';
+  var err = h('div', {class:'auth-err', role:'alert', hidden:true});
+  dialog({title:'Ligar com "' + c.nomeArvore + '"', wide:true,
+    sub:'Confirme quem é quem nas duas árvores. As pessoas marcadas ficam ligadas: em cada uma aparece o atalho para a outra árvore.',
+    body:[table,
+      already ? h('p', {class:'muted', text:'Você já participa de "' + c.nomeArvore + '".'}) : h('label', {class:'check', for:'lkJoin'}, [cJoin, 'Entrar na árvore "' + c.nomeArvore + '" como ' + papelNome(c.papel).toLowerCase()]),
+      grantTo ? h('label', {class:'check', for:'lkGrant'}, [cGrant, 'Dar acesso de leitura da "' + tree.nome + '" para ' + grantTo]) : null,
+      err],
+    actions:[{label:'Ligar árvores', primary:true, onclick:function(close){
+      var pares = rows.filter(function(r){ return r.b; }).map(function(r){ return {a:r.a.id, b:r.b, nomeA:r.a.nome, nomeB:P[r.b].nome}; });
+      if(!pares.length){ err.hidden = false; err.textContent = 'Escolha pelo menos uma pessoa correspondente.'; return false; }
+      var dupB = {}; if(pares.some(function(p){ if(dupB[p.b]) return true; dupB[p.b] = 1; return false; })){ err.hidden = false; err.textContent = 'A mesma pessoa da sua árvore foi escolhida duas vezes.'; return false; }
+      doLink(c, code, pares, cJoin.checked && !already, grantTo && cGrant.checked ? grantTo : '').then(function(){ close(); toast('Árvores ligadas! 🔗'); },
+        function(e){ err.hidden = false; err.textContent = 'Não foi possível ligar (' + (e.code || 'erro') + '). Confira se as regras novas foram publicadas.'; });
+      return false;
+    }}]});
+}
+function doLink(c, code, pares, join, grantTo){
+  var A = c.arvore, B = tree.id, lid = linkId(A, B), ref = fb.fs.collection('ligacoes').doc(lid);
+  var existing = allLinks().filter(function(l){ return l.lid === lid; })[0];
+  var step = Promise.resolve();
+  if(join) step = step.then(function(){
+    return fb.fs.collection('acessos').doc(A + '__' + fb.email).set({arvore:A, email:fb.email, papel:c.papel, nome:fb.user.displayName || '', foto:fb.user.photoURL || '',
+      nomeArvore:c.nomeArvore || '', convite:code, entrouEm:firebase.firestore.FieldValue.serverTimestamp()});
+  });
+  step = step.then(function(){
+    if(!existing) return ref.set({arvoreA:A, arvoreB:B, nomeA:c.nomeArvore || '', nomeB:tree.nome, codigo:code, pares:pares, criadoPor:fb.email, criadoEm:firebase.firestore.FieldValue.serverTimestamp()});
+    var flip = existing.arvoreA !== A;
+    var add = pares.map(function(p){ return flip ? {a:p.b, b:p.a, nomeA:p.nomeB, nomeB:p.nomeA} : p; });
+    var keep = (existing.pares || []).filter(function(o){ return !add.some(function(n){ return n.a === o.a || n.b === o.b; }); });
+    return ref.update({pares:keep.concat(add), codigo:code});
+  });
+  if(grantTo && !membersState.membros.some(function(m){ return m.email === grantTo; })) step = step.then(function(){
+    return fb.fs.collection('acessos').doc(B + '__' + grantTo).set({arvore:B, email:grantTo, papel:'leitor', nomeArvore:tree.nome, nome:'',
+      exigeVerificado:!c.criadoPorVerificado, viaLigacao:A, aprovadoPor:fb.email, aprovadoEm:firebase.firestore.FieldValue.serverTimestamp()});
+  });
+  return step;
+}
+function linksPanel(){
+  var ls = allLinks(); if(!ls.length) return null;
+  var sec = h('section', {class:'panel', style:'margin-top:16px'}, [h('h3', {text:'Árvores ligadas (' + ls.length + ')'})]);
+  ls.forEach(function(l){
+    var mine = l.arvoreA === tree.id ? 'a' : 'b', other = mine === 'a' ? 'b' : 'a';
+    var oid = other === 'a' ? l.arvoreA : l.arvoreB, oname = other === 'a' ? l.nomeA : l.nomeB;
+    sec.appendChild(h('div', {class:'member'}, [
+      h('span', {class:'av sm', text:'🔗'}),
+      h('div', {class:'m-info'}, [h('b', {text:oname || 'Outra árvore'}),
+        h('div', {class:'muted', text:(l.pares || []).map(function(p){ return (mine === 'a' ? p.nomeA : p.nomeB) + ' ↔ ' + (mine === 'a' ? p.nomeB : p.nomeA); }).join(' · ')})]),
+      h('div', {class:'actions'}, [
+        h('button', {class:'btn sm', type:'button', text:hasTree(oid) ? 'Abrir ↗' : 'Pedir acesso', onclick:function(){ goTree(oid, null, oname); }}),
+        h('button', {class:'btn sm danger', type:'button', text:'Desfazer ligação', onclick:function(){
+          dialog({title:'Desfazer ligação', sub:'As árvores deixam de se apontar uma para a outra. Os acessos que já foram dados continuam (remova em Membros, se quiser).', actions:[{label:'Desfazer', danger:true, onclick:function(){ fb.fs.collection('ligacoes').doc(l.lid).delete().then(function(){ toast('Ligação desfeita'); }, function(e){ toast('Erro (' + (e.code || 'erro') + ')'); }); }}]});
+        }})
+      ])
+    ]));
+  });
+  return sec;
 }
 
 /* ----- administrador: trocas de e-mail ----- */
