@@ -508,6 +508,7 @@ body.read-only .fg-person.vazio, body.read-only button.empty-slot, body.read-onl
 .link-sec + .link-sec{border-top:1px dashed var(--border);padding-top:10px}
 .link-sec p{margin:0 0 8px}
 .link-box .actions{display:flex;flex-wrap:wrap;gap:6px}
+.link-st{display:block;font-size:.74rem;color:var(--soft);margin-top:2px}
 .cmp-rows{display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow:auto}
 .cmp-row{display:grid;grid-template-columns:auto 8.5rem minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:.9rem}
 .cmp-row b{font-size:.82rem}
@@ -4085,9 +4086,17 @@ function openLinkDialog(pid, preset){
   dialog({title:'🔗 Ligar árvores · ' + displayName(p), body:[body], cancel:'Fechar'});
   if(preset) setTimeout(function(){ redeemLink(preset, pid, err); }, 50);
 }
+function linkStatus(l){
+  var full = allLinks().filter(function(x){ return x.lid === l.lid; })[0] || l, rb = linkRemote(l), d = linkDirect[l.lid];
+  if(rb && rb.oficial) return rb.foto ? 'Perfil oficial de lá · foto e dados sincronizados' : 'Perfil oficial de lá (sem foto)';
+  if(rb) return 'Dados sincronizados com ' + (l.nomeArvore || 'a outra árvore');
+  if(d && d.erro) return 'Aguardando ' + (l.nomeArvore || 'a outra árvore') + ': um administrador de lá precisa abrir a árvore com a versão nova do app.';
+  return 'Sincronizando…';
+}
 function linkBox(l, pid){
   return h('div', {class:'link-box'}, [
-    h('span', {}, ['🔗 Também na árvore ', h('b', {text:l.nomeArvore || 'outra árvore'}), l.pessoaNome ? ' como ' : '', l.pessoaNome ? h('b', {text:l.pessoaNome}) : null]),
+    h('span', {}, ['🔗 Também na árvore ', h('b', {text:l.nomeArvore || 'outra árvore'}), l.pessoaNome ? ' como ' : '', l.pessoaNome ? h('b', {text:l.pessoaNome}) : null,
+      pid ? h('small', {class:'link-st', text:linkStatus(l)}) : null]),
     h('div', {class:'actions'}, [
       h('button', {class:'btn sm', type:'button', text:hasTree(l.arvore) ? 'Abrir ↗' : 'Pedir acesso', onclick:function(){ openOther(l); }}),
       pid ? h('button', {class:'btn sm', type:'button', text:'Comparar dados', onclick:function(){ openLinkCompare(pid, l); }}) : null
@@ -4186,9 +4195,9 @@ var LINK_LBL = {nome:'Nome', sexo:'Sexo', nasc:'Nascimento', falec:'Falecimento'
 var linkSync = {timer:null, busy:false};
 function linkSide(l){ var mine = l.arvoreA === tree.id ? 'a' : 'b'; return {mine:mine, other:mine === 'a' ? 'b' : 'a', meuCampo:mine === 'a' ? 'dadosA' : 'dadosB', outroCampo:mine === 'a' ? 'dadosB' : 'dadosA'}; }
 function hashStr(t){ var x = 5381; for(var i = 0; i < t.length; i++) x = ((x << 5) + x + t.charCodeAt(i)) | 0; return (x >>> 0).toString(36) + ':' + t.length; }
-function linkBodyOf(p, comFoto){
+function linkBodyOf(p, comFoto, semLimite){
   var b = {}; LINK_F.forEach(function(f){ if(f === 'foto') return; b[f] = p[f] || ''; });
-  b.foto = comFoto && p.foto && p.foto.length < 400000 ? p.foto : '';
+  b.foto = comFoto && p.foto && (semLimite || p.foto.length < 400000) ? p.foto : '';
   b.oficial = !!p.perfilDono;
   return b;
 }
@@ -4204,6 +4213,7 @@ function runLinkSync(){
   linkSync.busy = true;
   var pr = fetchDirectLinked().then(function(){
     try{ pullLinked(); }catch(e){ console.warn('ligacao/puxar', e); }
+    try{ if(current === 'arvore') renderTree(); }catch(e){}
     return fb.isAdmin ? pushLinked() : null;
   });
   pr.then(function(){ linkSync.busy = false; }, function(e){ linkSync.busy = false; console.warn('ligacao/publicar', e); });
@@ -4214,13 +4224,12 @@ function fetchDirectLinked(force){
   var jobs = [];
   allLinks().forEach(function(l){
     var sd = linkSide(l), other = sd.other === 'a' ? l.arvoreA : l.arvoreB;
-    if(!hasTree(other)) return;
-    var c = linkDirect[l.lid]; if(c && !force && Date.now() - c.em < 120000) return;
-    var col = fb.fs.collection('arvores').doc(other).collection('pessoas'), dados = {};
+    var c = linkDirect[l.lid]; if(c && !force && Date.now() - c.em < (c.erro ? 600000 : 120000)) return;
+    var col = fb.fs.collection('arvores').doc(other).collection('pessoas'), dados = {}, erro = '';
     var ids = (l.pares || []).map(function(par){ return par[sd.other]; }).filter(Boolean);
     jobs.push(Promise.all(ids.map(function(id){
-      return col.doc(id).get().then(function(d){ if(d.exists){ var o = d.data() || {}; dados[id] = linkBodyOf(o, true); dados[id].oficial = !!o.perfilDono; } }, function(){});
-    })).then(function(){ linkDirect[l.lid] = {em:Date.now(), dados:dados}; }));
+      return col.doc(id).get().then(function(d){ if(d.exists){ var o = d.data() || {}; dados[id] = linkBodyOf(o, true, true); dados[id].oficial = !!o.perfilDono; } }, function(e){ erro = (e && e.code) || 'erro'; });
+    })).then(function(){ linkDirect[l.lid] = {em:Date.now(), dados:dados, erro:Object.keys(dados).length ? '' : erro}; }));
   });
   return Promise.all(jobs);
 }
@@ -4228,16 +4237,37 @@ function remoteDados(l){
   var sd = linkSide(l);
   return Object.assign({}, l[sd.outroCampo] || {}, (linkDirect[l.lid] || {}).dados || {});
 }
+// reduz uma foto (dataURL) para caber no documento da ligação
+var smallCache = {};
+function smallPhoto(url, size){
+  var k = hashStr(url) + '@' + size; if(smallCache[k]) return Promise.resolve(smallCache[k]);
+  return new Promise(function(res){
+    var img = new Image();
+    img.onload = function(){ try{
+      var s = Math.min(img.naturalWidth, img.naturalHeight), c = document.createElement('canvas'); c.width = c.height = size;
+      c.getContext('2d').drawImage(img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, size, size);
+      res(smallCache[k] = c.toDataURL('image/jpeg', 0.82)); }catch(e){ res(''); } };
+    img.onerror = function(){ res(''); };
+    img.src = url;
+  });
+}
 // publica os dados das minhas pessoas ligadas (só administrador pode gravar em ligacoes)
 function pushLinked(){
   return allLinks().reduce(function(pr, l){
     return pr.then(function(){
       var sd = linkSide(l), map = {};
-      (l.pares || []).forEach(function(par){ var p = P[par[sd.mine]]; if(p) map[par[sd.mine]] = linkBodyOf(p, true); });
-      if(JSON.stringify(map).length > 850000) Object.keys(map).forEach(function(k){ map[k].foto = ''; });
-      if(stableSig(map) === stableSig(l[sd.meuCampo] || {})) return;
-      var upd = {}; upd[sd.meuCampo] = map;
-      return fb.fs.collection('ligacoes').doc(l.lid).update(upd).then(function(){ l[sd.meuCampo] = map; });
+      var shrink = [];
+      (l.pares || []).forEach(function(par){
+        var p = P[par[sd.mine]]; if(!p) return;
+        var b = map[par[sd.mine]] = linkBodyOf(p, true, true);
+        if(b.foto && b.foto.length > 120000) shrink.push(smallPhoto(b.foto, 240).then(function(u){ b.foto = u; }));
+      });
+      return Promise.all(shrink).then(function(){
+        if(JSON.stringify(map).length > 450000) Object.keys(map).forEach(function(k){ map[k].foto = ''; });
+        if(stableSig(map) === stableSig(l[sd.meuCampo] || {})) return;
+        var upd = {}; upd[sd.meuCampo] = map;
+        return fb.fs.collection('ligacoes').doc(l.lid).update(upd).then(function(){ l[sd.meuCampo] = map; });
+      });
     });
   }, Promise.resolve());
 }
