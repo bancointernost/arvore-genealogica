@@ -1765,7 +1765,8 @@ function setFocus(id){ if(!P[id]) return; focusId = id; save(); showView('arvore
 function renderList(){
   var q = $('listQ').value.trim().toLowerCase(), sort = $('listSort').value, body = $('listBody');
   body.innerHTML = '';
-  var arr = Object.keys(P).map(get).filter(function(p){ return !q || norm(p.nome).indexOf(norm(q)) >= 0; });
+  // só quem é desta árvore: cadastros compartilhados por outra árvore (e a família que veio com eles) ficam de fora; o cônjuge fica
+  var arr = Object.keys(P).map(get).filter(function(p){ return (typeof publicOut !== 'function' || !publicOut(p.id)) && (!q || norm(p.nome).indexOf(norm(q)) >= 0); });
   if(sort === 'nome') arr.sort(byName);
   else if(sort === 'filhos') arr.sort(function(a,b){ return children(b.id).length - children(a.id).length || byName(a,b); });
   else arr.sort(function(a,b){return b.ord - a.ord;});
