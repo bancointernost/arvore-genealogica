@@ -1,7 +1,7 @@
 /* Árvore Genealógica — service worker
    - página: busca sempre a versão nova na internet; sem internet, abre a última guardada
    - dados da família (Firebase) NÃO passam por aqui: continuam sempre online */
-var VERSAO = 'arvore-v50';
+var VERSAO = 'arvore-v51';
 var BASICO = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', function(e){

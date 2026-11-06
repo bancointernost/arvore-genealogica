@@ -395,6 +395,16 @@ ol.path b{color:var(--head)}
 .age-out.warn{color:var(--danger);background:var(--danger-pale);border-color:transparent}
 /* topo: menu, desfazer, avisos */
 .menu-wrap{position:relative}
+.ped-opts{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:0 0 10px;font-size:.84rem}
+.ped-opts-lbl{font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--soft)}
+.ped-opt.vazio{opacity:.5}
+.rel-block{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px 10px;min-width:0}
+.rel-block.vazio{visibility:hidden}
+.rel-title{font-size:.66rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--teal);margin-bottom:6px}
+.rel-list{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.rel-list .pc{width:auto;max-width:200px;height:auto}
+@media (max-width:720px){ .rel-block{grid-column:1/-1!important} .rel-block.vazio{display:none} }
+
 .slot.has-exp{position:relative}
 .exp-btn{position:absolute;top:-9px;right:-7px;z-index:2;min-width:22px;height:22px;padding:0 6px;border-radius:11px;border:1px dashed var(--line);background:var(--card);color:var(--soft);font-weight:700;font-size:.8rem;line-height:1;display:inline-flex;align-items:center;gap:3px;cursor:pointer;box-shadow:var(--shadow)}
 .exp-btn.has{border:1px solid var(--blue);color:var(--blue);background:var(--blue-pale)}
@@ -790,6 +800,7 @@ body.read-only .fg-person.vazio, body.read-only button.empty-slot, body.read-onl
         <button type="button" class="btn sm" id="treeFull" aria-pressed="false"><span class="ar" aria-hidden="true">⤢</span> <span id="treeFullTxt">Expandir tudo</span></button>
       </span>
     </div>
+    <div class="ped-opts" id="pedOpts" role="group" aria-label="Mostrar também na árvore"></div>
     <div class="ped-scroll" id="pedScroll"><div class="pedigree" id="pedigree"></div></div>
     <div id="fullTree" hidden></div>
     <div class="below">
@@ -1401,6 +1412,33 @@ function panZoom(sc, key, content){
   apply();
 }
 function centerPed(){ var sc = $('pedScroll'); if(!sc) return; panZoom(sc, 'compacta', function(){ return $('pedigree'); }); requestAnimationFrame(function(){ sc.scrollLeft = Math.max(0, (sc.scrollWidth - sc.clientWidth) / 2); if(sc._pz) sc._pz.center(); }); }
+// parentes que podem aparecer junto na árvore (marcados nos tiquezinhos acima dela)
+var PED_EXTRAS = [['irmaos','Irmãos'], ['tios','Tios'], ['primos','Primos'], ['filhos','Filhos']];
+var pedExtra = {}; try{ pedExtra = JSON.parse(localStorage.getItem('arvore-extras') || '{}') || {}; }catch(e){ pedExtra = {}; }
+function relativesOf(f){
+  var pai = get(f.pai), mae = get(f.mae);
+  var tiosP = pai ? siblings(pai.id) : [], tiosM = mae ? siblings(mae.id) : [];
+  function kidsOf(list){ var out = []; list.forEach(function(t){ children(t.id).forEach(function(k){ if(out.indexOf(k) < 0) out.push(k); }); }); return out; }
+  return {irmaos:siblings(f.id), tiosP:tiosP, tiosM:tiosM, primosP:kidsOf(tiosP), primosM:kidsOf(tiosM), filhos:children(f.id)};
+}
+function renderPedOpts(){
+  var box = $('pedOpts'); if(!box) return; box.innerHTML = '';
+  var f = P[focusId]; if(!f) return;
+  var r = relativesOf(f), n = {irmaos:r.irmaos.length, tios:r.tiosP.length + r.tiosM.length, primos:r.primosP.length + r.primosM.length, filhos:r.filhos.length};
+  box.appendChild(h('span', {class:'ped-opts-lbl', text:'Mostrar também:'}));
+  PED_EXTRAS.forEach(function(o){
+    var cb = h('input', {type:'checkbox', id:'pex_' + o[0]}); cb.checked = !!pedExtra[o[0]];
+    cb.addEventListener('change', function(){ pedExtra[o[0]] = cb.checked; try{ localStorage.setItem('arvore-extras', JSON.stringify(pedExtra)); }catch(e){} renderPedigree(); });
+    box.appendChild(h('label', {class:'check ped-opt' + (n[o[0]] ? '' : ' vazio'), for:'pex_' + o[0]}, [cb, o[1] + ' (' + n[o[0]] + ')']));
+  });
+}
+function relBlock(title, people, span){
+  if(!people.length) return null;
+  return h('div', {class:'rel-block', style:'grid-column:span ' + span}, [
+    h('div', {class:'rel-title', text:title + ' (' + people.length + ')'}),
+    h('div', {class:'rel-list'}, people.map(function(p){ return pcard(p, '', true); }))
+  ]);
+}
 var pedOpen = {};   // ancestrais com os pais abertos na árvore compacta
 function ancestorsAbove(p, max){ var n = 0; (function up(x, d){ if(!x || d > max) return; [get(x.pai), get(x.mae)].forEach(function(y){ if(y){ n++; up(y, d + 1); } }); })(p, 1); return n; }
 // botão "+" num cartão: mostra que há mais gente acima e abre/fecha os pais dele
@@ -1477,7 +1515,20 @@ function renderPedigree(){
     row.appendChild(h('span', {class:'ring', text:'⚭', 'aria-label':'casado(a) com'}));
     row.appendChild(h('div', {class:'spouse'}, [pcard(P[cid], 'Cônjuge')]));
   });
+  // tios (irmãos do pai e da mãe), entre os pais e a pessoa em foco
+  var rel = relativesOf(f);
+  function sideRow(label, left, right, lt, rt){
+    if(!left.length && !right.length) return;
+    ped.appendChild(h('div', {class:'gen-label', text:label}));
+    ped.appendChild(relBlock(lt, left, 8) || h('div', {class:'rel-block vazio', style:'grid-column:span 8'}));
+    ped.appendChild(relBlock(rt, right, 8) || h('div', {class:'rel-block vazio', style:'grid-column:span 8'}));
+  }
+  if(pedExtra.tios) sideRow('Tios', rel.tiosP, rel.tiosM, 'Irmãos ' + (get(f.pai) ? 'de ' + firstName(get(f.pai)) : 'do pai'), 'Irmãos ' + (get(f.mae) ? 'de ' + firstName(get(f.mae)) : 'da mãe'));
   ped.appendChild(row);
+  if(pedExtra.irmaos && rel.irmaos.length){ ped.appendChild(h('div', {class:'gen-label', text:'Irmãos'})); ped.appendChild(relBlock('Irmãos de ' + firstName(f), rel.irmaos, 16)); }
+  if(pedExtra.primos) sideRow('Primos', rel.primosP, rel.primosM, 'Lado do pai', 'Lado da mãe');
+  if(pedExtra.filhos && rel.filhos.length){ ped.appendChild(h('div', {class:'gen-label', text:'Filhos'})); ped.appendChild(relBlock('Filhos de ' + firstName(f), rel.filhos, 16)); }
+  renderPedOpts();
 
   // centraliza a rolagem horizontal
   ped.className = 'pedigree g' + (gens + 1);
@@ -2953,7 +3004,7 @@ function buildMenu(){
   item('Exportar backup completo', '.json com tudo, para guardar', function(){ exportJSON(false); });
   item('Exportar para compartilhar', '.json sem contatos e datas completas de pessoas vivas', function(){ exportJSON(true); });
   item('Exportar GEDCOM', '.ged para FamilySearch, MyHeritage, Ancestry…', exportGedcom);
-  item('Baixar pôster da árvore', 'imagem .png dos ancestrais de quem está em foco', function(){ makePoster(focusId); });
+  item('Baixar pôster da árvore', 'imagem .png de quem está em foco', function(){ askPoster(focusId); });
   if(!shared.readOnly) item('Importar arquivo', 'backup .json, perfil .json ou GEDCOM .ged', function(){ $('fileImport').click(); });
   if(driveMode() && !shared.readOnly && typeof fb !== 'undefined' && fb.isAdmin && galleryInFirebase().length) item('Mover galeria para o Google Drive', galleryInFirebase().length + ' imagem(ns) hoje ocupam espaço no Firebase', migrateGalleryToDrive);
   menu.appendChild(h('div', {class:'menu-sep'}));
@@ -3114,7 +3165,18 @@ function importGedcom(text){
 }
 
 /* ================= pôster ================= */
-function makePoster(id){
+function askPoster(id){
+  var f = P[id]; if(!f){ toast('Escolha uma pessoa na árvore primeiro.'); return; }
+  var r = relativesOf(f), n = r.irmaos.length + r.tiosP.length + r.tiosM.length + r.primosP.length + r.primosM.length + r.filhos.length;
+  dialog({title:'Pôster de ' + displayName(f), sub:'O que entra no pôster?', cancel:'Cancelar', actions:[
+    {label:'Só os principais', onclick:function(){ makePoster(id, false); }},
+    {label:'Todo mundo' + (n ? ' (+' + n + ' parentes)' : ''), primary:true, onclick:function(){ makePoster(id, true); }}
+  ], body:[h('ul', {class:'poster-opts'}, [
+    h('li', {}, [h('b', {text:'Só os principais: '}), 'a pessoa, pais, avós, bisavós e trisavós.']),
+    h('li', {}, [h('b', {text:'Todo mundo: '}), 'os principais e mais irmãos, tios, primos e filhos, numa faixa embaixo.'])
+  ])]});
+}
+function makePoster(id, todos){
   var root = P[id]; if(!root){ toast('Escolha uma pessoa na árvore primeiro.'); return; }
   toast('Montando o pôster…');
   var GENS = 4, W = 2600, H = 1700, top = 210, bottom = 90, left = 70, boxW = 540, boxH = 128;
@@ -3135,8 +3197,17 @@ function makePoster(id){
   function walk(p, g, idx){ if(!p || g >= GENS) return; nodes.push({p:p, g:g, idx:idx}); walk(get(p.pai), g + 1, idx * 2); walk(get(p.mae), g + 1, idx * 2 + 1); }
   walk(root, 0, 0);
   function pos(g, idx){ var span = slots / Math.pow(2, g); return {x:left + g * (boxW + colGap), y:top + (idx + 0.5) * span * slotH - boxH / 2}; }
+  // "todo mundo": faixa embaixo com irmãos, tios, primos e filhos
+  var groups = [];
+  if(todos){ var rr0 = relativesOf(root);
+    [['Irmãos', rr0.irmaos], ['Tios — lado do pai', rr0.tiosP], ['Tios — lado da mãe', rr0.tiosM], ['Primos — lado do pai', rr0.primosP], ['Primos — lado da mãe', rr0.primosM], ['Filhos', rr0.filhos]]
+      .forEach(function(gp){ if(gp[1].length) groups.push(gp); }); }
+  var exW = 470, exH = 100, exGap = 18, perRow = Math.max(1, Math.floor((W - left * 2 + exGap) / (exW + exGap)));
+  var extraH = 0; groups.forEach(function(gp){ extraH += 64 + Math.ceil(gp[1].length / perRow) * (exH + exGap); }); if(groups.length) extraH += 90;
+  var HA = H; H += extraH;
   var imgs = {}, waits = [];
   sibs.forEach(function(sp){ if(sp.foto){ var im = new Image(); waits.push(new Promise(function(r){ im.onload = r; im.onerror = r; })); im.src = sp.foto; imgs[sp.id] = im; } });
+  groups.forEach(function(gp){ gp[1].forEach(function(sp){ if(sp.foto && !imgs[sp.id]){ var im = new Image(); waits.push(new Promise(function(r){ im.onload = r; im.onerror = r; })); im.src = sp.foto; imgs[sp.id] = im; } }); });
   nodes.forEach(function(n){ if(n.p.foto && !hidePrivate(n.p) || n.p.foto){ var im = new Image(); waits.push(new Promise(function(r){ im.onload = r; im.onerror = r; })); im.src = n.p.foto; imgs[n.p.id] = im; } });
   var fontsReady = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
   Promise.all(waits.concat([fontsReady])).then(function(){
@@ -3164,13 +3235,14 @@ function makePoster(id){
     });
     function rr(px, py, w, h2, r){ x.beginPath(); x.moveTo(px + r, py); x.arcTo(px + w, py, px + w, py + h2, r); x.arcTo(px + w, py + h2, px, py + h2, r); x.arcTo(px, py + h2, px, py, r); x.arcTo(px, py, px + w, py, r); x.closePath(); }
     function wrap(t, maxW, font){ x.font = font; var ws = t.split(' '), ls = [], l = ''; ws.forEach(function(w){ var tt = l ? l + ' ' + w : w; if(x.measureText(tt).width > maxW && l){ ls.push(l); l = w; } else l = tt; }); if(l) ls.push(l); return ls.slice(0, 2); }
-    function drawBox(p, q, focus, bh){
+    function drawBox(p, q, focus, bh, bw){
+      bw = bw || boxW;
       var k = bh / boxH;
       var ring = p.sexo === 'F' ? '#c2578a' : p.sexo === 'M' ? '#3a7fbf' : '#9aa3ad';
       var fill = p.sexo === 'F' ? '#fbdfe9' : p.sexo === 'M' ? '#d7e9fb' : '#e9ebee';
       x.save(); x.shadowColor = 'rgba(20,40,60,.12)'; x.shadowBlur = 14; x.shadowOffsetY = 4;
-      rr(q.x, q.y, boxW, bh, 16); x.fillStyle = focus ? '#e8f5e6' : '#ffffff'; x.fill(); x.restore();
-      rr(q.x, q.y, boxW, bh, 16); x.lineWidth = focus ? 5 : 2; x.strokeStyle = focus ? '#3f9142' : '#dde3ea'; x.stroke();
+      rr(q.x, q.y, bw, bh, 16); x.fillStyle = focus ? '#e8f5e6' : '#ffffff'; x.fill(); x.restore();
+      rr(q.x, q.y, bw, bh, 16); x.lineWidth = focus ? 5 : 2; x.strokeStyle = focus ? '#3f9142' : '#dde3ea'; x.stroke();
       var cx = q.x + 66 * k, cy = q.y + bh / 2, r = 44 * k;
       x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.fillStyle = fill; x.fill();
       if(imgs[p.id] && imgs[p.id].naturalWidth){ x.save(); x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.clip(); x.drawImage(imgs[p.id], cx - r, cy - r, r * 2, r * 2); x.restore(); }
@@ -3181,7 +3253,7 @@ function makePoster(id){
         x.beginPath(); x.arc(bx, by, br, 0, Math.PI * 2); x.fillStyle = '#ffffff'; x.fill(); x.lineWidth = 2; x.strokeStyle = '#c3ced9'; x.stroke();
         x.fillStyle = '#2c333b'; x.font = '700 ' + Math.round(17 * k + 3) + 'px Arial, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('✝', bx, by + 1); x.textAlign = 'left'; x.textBaseline = 'alphabetic';
       }
-      var tx = q.x + 128 * k, tw = boxW - 150 * k, lh = 36 * k;
+      var tx = q.x + 128 * k, tw = bw - 150 * k, lh = 36 * k;
       var lines = wrap(displayName(p), tw, '700 ' + Math.round(30 * k) + 'px Merriweather, Georgia, serif');
       var yr0 = years(p), blockH = lines.length * lh + (yr0 ? 30 * k : 0);
       var y0 = q.y + (bh - blockH) / 2 + 28 * k;
@@ -3202,6 +3274,18 @@ function makePoster(id){
       sq.forEach(function(it){ drawBox(it.p, {x:f0.x, y:it.y}, false, sibH); });
     }
     nodes.forEach(function(n){ drawBox(n.p, pos(n.g, n.idx), n.g === 0, boxH); });
+    if(groups.length){
+      var gy = HA - bottom + 30;
+      x.strokeStyle = '#dde3ea'; x.lineWidth = 2; x.beginPath(); x.moveTo(left, gy); x.lineTo(W - left, gy); x.stroke();
+      x.fillStyle = '#0e7c72'; x.font = '700 26px "Source Sans 3", Arial, sans-serif'; x.fillText('FAMÍLIA PRÓXIMA DE ' + displayName(root).toUpperCase(), left, gy + 52);
+      gy += 80;
+      groups.forEach(function(gp){
+        x.fillStyle = '#6b7684'; x.font = '700 24px "Source Sans 3", Arial, sans-serif'; x.fillText(gp[0].toUpperCase() + ' (' + gp[1].length + ')', left, gy + 30);
+        gy += 46;
+        gp[1].forEach(function(sp, i){ var col = i % perRow, row = Math.floor(i / perRow); drawBox(sp, {x:left + col * (exW + exGap), y:gy + row * (exH + exGap)}, false, exH, exW); });
+        gy += Math.ceil(gp[1].length / perRow) * (exH + exGap) + 18;
+      });
+    }
     x.fillStyle = '#6b7684'; x.font = '400 22px "Source Sans 3", Arial, sans-serif';
     x.fillText('Gerado em ' + new Date().toLocaleDateString('pt-BR') + ' · ' + Object.keys(P).length + ' pessoas cadastradas na árvore', left, H - 40);
     c.toBlob(function(blob){
