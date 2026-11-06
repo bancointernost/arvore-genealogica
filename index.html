@@ -189,7 +189,16 @@ main{padding-block:26px 70px}
 .dt-gen{font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--teal);margin-left:4px}
 .ped-scroll{overflow-x:auto;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:22px 18px 26px}
 .pedigree{display:grid;grid-template-columns:repeat(16,minmax(0,1fr));row-gap:38px;column-gap:10px;min-width:900px}
-.pedigree.g4{min-width:1900px}
+.pedigree.g4{min-width:0}
+/* trisavós: cartões compactos (foto em cima, primeiro nome embaixo) para caber na largura sem rolar */
+.couple.tri{gap:4px}
+.couple.tri .pc{flex-direction:column;justify-content:center;text-align:center;padding:6px 3px;gap:4px}
+.couple.tri .pc .role,.couple.tri .pc .yr{display:none}
+.couple.tri .pc .nm{font-size:.62rem;line-height:1.2;-webkit-line-clamp:2;overflow-wrap:anywhere}
+.couple.tri .pc .av,.couple.tri .pc .av-wrap .av{width:24px;height:24px;font-size:.62rem}
+.couple.tri .empty-slot{font-size:.62rem;padding:4px 2px;min-height:58px}
+.couple.tri.no-child .empty-slot{visibility:hidden}
+.pedigree.g4 .couple.s2 .pc .nm{font-size:.74rem}
 .gen-label{grid-column:1/-1;font-size:.66rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--soft);margin-bottom:-28px}
 .couple{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .couple.s1{grid-column:span 2}.couple.s2{grid-column:span 4}.couple.s4{grid-column:span 8}.couple.s8{grid-column:span 16}
@@ -1327,7 +1336,7 @@ function renderPedigree(){
     ped.appendChild(h('div', {class:'gen-label', text:'Trisavós'}));
     for(var t = 0; t < 8; t++){
       var bc = bis[t];
-      ped.appendChild(h('div', {class:'couple s1' + (bc ? ' has-child' : '')}, [
+      ped.appendChild(h('div', {class:'couple s1 tri' + (bc ? ' has-child' : ' no-child')}, [
         slot(tris[2*t], 'Trisavô', bc && bc.id, 'pai', true),
         slot(tris[2*t+1], 'Trisavó', bc && bc.id, 'mae', true)
       ]));
