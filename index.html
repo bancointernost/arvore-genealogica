@@ -395,6 +395,7 @@ ol.path b{color:var(--head)}
 .age-out.warn{color:var(--danger);background:var(--danger-pale);border-color:transparent}
 /* topo: menu, desfazer, avisos */
 .menu-wrap{position:relative}
+.fam-tools .fam-hide{display:none!important}
 .hist-list{display:flex;flex-direction:column;gap:8px;max-height:65vh;overflow:auto}
 .hist-row{border:1px solid var(--border);border-radius:9px;padding:8px 10px;background:var(--card)}
 .hist-row.desfeito{opacity:.55}
@@ -788,10 +789,10 @@ body.read-only .fg-person.vazio, body.read-only button.empty-slot, body.read-onl
         <h2 id="famTitle">Grupos familiares</h2>
       </div>
       <div class="fam-tools">
-        <div class="fld"><label for="famStart">Começar pela família de</label><select id="famStart"></select></div>
-        <div class="fld" id="famSpouseFld" hidden><label for="famSpouse">Com</label><select id="famSpouse"></select></div>
+        <div class="fld" hidden><label for="famStart">Começar pela família de</label><select id="famStart"></select></div>
+        <div class="fld fam-hide" id="famSpouseFld" hidden><label for="famSpouse">Com</label><select id="famSpouse"></select></div>
         <button class="btn" type="button" id="famHome" title="Voltar ao casal principal">⌂ Minha família</button>
-        <button class="btn" type="button" id="famSetHome" hidden>Definir como minha família</button>
+        <button class="btn fam-hide" type="button" id="famSetHome" hidden>Definir como minha família</button>
         <button class="btn" type="button" id="famOpenAll">Abrir todas</button>
         <button class="btn" type="button" id="famCloseAll">Recolher</button>
       </div>
